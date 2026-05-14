@@ -8,10 +8,12 @@
 #include <ydb/library/actors/core/log.h>
 #include <ydb/library/actors/testlib/test_runtime.h>
 
+#include <ydb/library/actors/struct_log/create_message_impl.h>
+
 using namespace NMonitoring;
 using namespace NActors;
 using namespace NActors::NLog;
-using namespace NKikimr::NStructuredLog;
+using namespace NActors::NStructuredLog;
 
 namespace {
     const TString& ServiceToString(int) {
@@ -350,8 +352,8 @@ Y_UNIT_TEST_SUITE(TWriteJsonLogTest) {
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
         MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message");
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDBLOG_CREATE_MESSAGE({"value1", 1}));
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDBLOG_CREATE_MESSAGE({"value2", 2}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDB_LOG_CREATE_MESSAGE({"value1", 1}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDB_LOG_CREATE_MESSAGE({"value2", 2}));
 
         env.FlushLogBuffer();
 
@@ -371,202 +373,202 @@ Y_UNIT_TEST_SUITE(TWriteJsonLogTest) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"DEBUG","npriority":7,"component":"FAKE","tag":"KIKIMR",)"
-                         R"("revision":-1,"location":"log_ut.cpp:374","message":"Test message"})");
+                         R"("revision":-1,"location":"log_ut.cpp:376","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"DEBUG","npriority":7,"component":"FAKE","tag":"KIKIMR",)"
-                         R"("revision":-1,"location":"log_ut.cpp:375","message":"Test message with data","value":"1"})");
+                         R"("revision":-1,"location":"log_ut.cpp:377","message":"Test message with data","value":"1"})");
     }
 
     Y_UNIT_TEST(WritePriority) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-        YDBLOG_CTX_COMP_ALERT(env, 1, "Test message");
-        YDBLOG_CTX_COMP_CRIT(env, 1, "Test message");
-        YDBLOG_CTX_COMP_ERROR(env, 1, "Test message");
-        YDBLOG_CTX_COMP_WARN(env, 1, "Test message");
-        YDBLOG_CTX_COMP_NOTICE(env, 1, "Test message");
-        YDBLOG_CTX_COMP_INFO(env, 1, "Test message");
-        YDBLOG_CTX_COMP_DEBUG(env, 1, "Test message");
-        YDBLOG_CTX_COMP_TRACE(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_ALERT(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_CRIT(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_ERROR(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_WARN(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_NOTICE(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_INFO(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_DEBUG(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_TRACE(env, 1, "Test message");
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR",)"
-                         R"("revision":-1,"location":"log_ut.cpp:388","message":"Test message"})");
-        env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"ALERT","npriority":1,"component":"FAKE","tag":"KIKIMR",)"
-                         R"("revision":-1,"location":"log_ut.cpp:389","message":"Test message"})");
-        env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"CRIT","npriority":2,"component":"FAKE","tag":"KIKIMR",)"
                          R"("revision":-1,"location":"log_ut.cpp:390","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"ERROR","npriority":3,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"ALERT","npriority":1,"component":"FAKE","tag":"KIKIMR",)"
                          R"("revision":-1,"location":"log_ut.cpp:391","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"WARN","npriority":4,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"CRIT","npriority":2,"component":"FAKE","tag":"KIKIMR",)"
                          R"("revision":-1,"location":"log_ut.cpp:392","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"NOTICE","npriority":5,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"ERROR","npriority":3,"component":"FAKE","tag":"KIKIMR",)"
                          R"("revision":-1,"location":"log_ut.cpp:393","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"INFO","npriority":6,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"WARN","npriority":4,"component":"FAKE","tag":"KIKIMR",)"
                          R"("revision":-1,"location":"log_ut.cpp:394","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"DEBUG","npriority":7,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"NOTICE","npriority":5,"component":"FAKE","tag":"KIKIMR",)"
                          R"("revision":-1,"location":"log_ut.cpp:395","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
-                         R"("cluster":"","database":"static","node_id":0,"priority":"TRACE","npriority":8,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"INFO","npriority":6,"component":"FAKE","tag":"KIKIMR",)"
                          R"("revision":-1,"location":"log_ut.cpp:396","message":"Test message"})");
+        env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"DEBUG","npriority":7,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("revision":-1,"location":"log_ut.cpp:397","message":"Test message"})");
+        env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
+                         R"("cluster":"","database":"static","node_id":0,"priority":"TRACE","npriority":8,"component":"FAKE","tag":"KIKIMR",)"
+                         R"("revision":-1,"location":"log_ut.cpp:398","message":"Test message"})");
     }
 
     Y_UNIT_TEST(WriteComponent) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
-        YDBLOG_CTX_COMP_EMERG(env, 1000, "Test message");
-        YDBLOG_CTX_COMP_EMERG(env, 1001, "Test message");
-        YDBLOG_CTX_COMP_EMERG(env, 1002, "Test message");
+        YDB_LOG_CTX_COMP_EMERG(env, 1000, "Test message");
+        YDB_LOG_CTX_COMP_EMERG(env, 1001, "Test message");
+        YDB_LOG_CTX_COMP_EMERG(env, 1002, "Test message");
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"","cluster":"",)"
                          R"("database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"A","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:431","message":"Test message"})");
+                         R"("location":"log_ut.cpp:433","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"","cluster":"",)"
                          R"("database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"B","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:432","message":"Test message"})");
+                         R"("location":"log_ut.cpp:434","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"","cluster":"",)"
                          R"("database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"C","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:433","message":"Test message"})");
+                         R"("location":"log_ut.cpp:435","message":"Test message"})");
     }
 
     Y_UNIT_TEST(WriteWithoutComponent) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
-#define YDBLOG_THIS_FILE_COMPONENT 1000
-        YDBLOG_CTX_EMERG(env, "Test message");
-#undef YDBLOG_THIS_FILE_COMPONENT
+#define YDB_LOG_THIS_FILE_COMPONENT 1000
+        YDB_LOG_CTX_EMERG(env, "Test message");
+#undef YDB_LOG_THIS_FILE_COMPONENT
 
-#define YDBLOG_THIS_FILE_COMPONENT 1001
-        YDBLOG_CTX_EMERG(env, "Test message");
-#undef YDBLOG_THIS_FILE_COMPONENT
+#define YDB_LOG_THIS_FILE_COMPONENT 1001
+        YDB_LOG_CTX_EMERG(env, "Test message");
+#undef YDB_LOG_THIS_FILE_COMPONENT
 
-#define YDBLOG_THIS_FILE_COMPONENT 1002
-        YDBLOG_CTX_EMERG(env, "Test message");
-#undef YDBLOG_THIS_FILE_COMPONENT
+#define YDB_LOG_THIS_FILE_COMPONENT 1002
+        YDB_LOG_CTX_EMERG(env, "Test message");
+#undef YDB_LOG_THIS_FILE_COMPONENT
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"A","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:451","message":"Test message"})");
+                         R"("location":"log_ut.cpp:453","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"B","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:455","message":"Test message"})");
+                         R"("location":"log_ut.cpp:457","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"C","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:459","message":"Test message"})");
+                         R"("location":"log_ut.cpp:461","message":"Test message"})");
     }
 
     Y_UNIT_TEST(WriteWithContext) {
-        using namespace NKikimr::NStructuredLog;
+        using namespace NActors::NStructuredLog;
 
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
         {
             TLogStack::TLogGuard g;
-            YDBLOG_UPDATE_CONTEXT({"context", 1});
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+            YDB_LOG_UPDATE_CONTEXT({"context", 1});
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
             env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                              R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                             R"("location":"log_ut.cpp:482","message":"Test message","context":"1"})");
+                             R"("location":"log_ut.cpp:484","message":"Test message","context":"1"})");
             env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                              R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                             R"("location":"log_ut.cpp:483","message":"Test message","context":"1","value":"100"})");
+                             R"("location":"log_ut.cpp:485","message":"Test message","context":"1","value":"100"})");
         }
 
         {
             TLogStack::TLogGuard g;
-            YDBLOG_UPDATE_CONTEXT({"context", 2});
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+            YDB_LOG_UPDATE_CONTEXT({"context", 2});
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
             env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                              R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                             R"("location":"log_ut.cpp:496","message":"Test message","context":"2"})");
+                             R"("location":"log_ut.cpp:498","message":"Test message","context":"2"})");
             env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                              R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                             R"("location":"log_ut.cpp:497","message":"Test message","context":"2","value":"100"})");
+                             R"("location":"log_ut.cpp:499","message":"Test message","context":"2","value":"100"})");
             {
                 TLogStack::TLogGuard g2;
-                YDBLOG_UPDATE_CONTEXT({"context", 3}, {"subcontext", 4});
-                YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-                YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+                YDB_LOG_UPDATE_CONTEXT({"context", 3}, {"subcontext", 4});
+                YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+                YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
                 env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                                  R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                                 R"("location":"log_ut.cpp:508","message":"Test message","context":"3","subcontext":"4"})");
+                                 R"("location":"log_ut.cpp:510","message":"Test message","context":"3","subcontext":"4"})");
                 env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                                  R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                                 R"("location":"log_ut.cpp:509","message":"Test message","context":"3","subcontext":"4","value":"100"})");
+                                 R"("location":"log_ut.cpp:511","message":"Test message","context":"3","subcontext":"4","value":"100"})");
             }
 
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
             env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                              R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                             R"("location":"log_ut.cpp:519","message":"Test message","context":"2"})");
+                             R"("location":"log_ut.cpp:521","message":"Test message","context":"2"})");
             env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                              R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                             R"("location":"log_ut.cpp:520","message":"Test message","context":"2","value":"100"})");
+                             R"("location":"log_ut.cpp:522","message":"Test message","context":"2","value":"100"})");
         }
 
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:530","message":"Test message"})");
+                         R"("location":"log_ut.cpp:532","message":"Test message"})");
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
                          R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-                         R"("location":"log_ut.cpp:531","message":"Test message","value":"100"})");
+                         R"("location":"log_ut.cpp:533","message":"Test message","value":"100"})");
     }
 
     Y_UNIT_TEST(WriteJson) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message with json");
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"value1", 1});
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"value1", 1}, {"value2", 2});
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"value1", 1}, {"value2", 2}, {"value3", 3});
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"component", "MY"});
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message with json");
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"value1", 1});
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"value1", 1}, {"value2", 2});
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"value1", 1}, {"value2", 2}, {"value3", 3});
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message with json", {"component", "MY"});
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
             R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-            R"("location":"log_ut.cpp:545","message":"Test message with json"})");
+            R"("location":"log_ut.cpp:547","message":"Test message with json"})");
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
             R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-            R"("location":"log_ut.cpp:546","message":"Test message with json","value1":"1"})");
+            R"("location":"log_ut.cpp:548","message":"Test message with json","value1":"1"})");
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
             R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-            R"("location":"log_ut.cpp:547","message":"Test message with json","value1":"1","value2":"2"})");
+            R"("location":"log_ut.cpp:549","message":"Test message with json","value1":"1","value2":"2"})");
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
             R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-            R"("location":"log_ut.cpp:548","message":"Test message with json","value1":"1","value2":"2","value3":"3"})");
+            R"("location":"log_ut.cpp:550","message":"Test message with json","value1":"1","value2":"2","value3":"3"})");
 
         env.FetchMessage(R"({"@timestamp":"1970-01-01T23:59:50.000000Z","@log_type":"debug","microseconds":86390000000,"host":"",)"
             R"("cluster":"","database":"static","node_id":0,"priority":"EMERG","npriority":0,"component":"FAKE","tag":"KIKIMR","revision":-1,)"
-            R"("location":"log_ut.cpp:549","message":"Test message with json","_component":"MY"})");
+            R"("location":"log_ut.cpp:551","message":"Test message with json","_component":"MY"})");
     }
 }
 
@@ -578,8 +580,8 @@ Y_UNIT_TEST_SUITE(TWriteMetaLogTest) {
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
         MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message");
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDBLOG_CREATE_MESSAGE({"value1", 1}));
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDBLOG_CREATE_MESSAGE({"value2", 2}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDB_LOG_CREATE_MESSAGE({"value1", 1}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDB_LOG_CREATE_MESSAGE({"value2", 2}));
 
         env.FlushLogBuffer();
 
@@ -594,25 +596,25 @@ Y_UNIT_TEST_SUITE(TWriteMetaLogTest) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1}, {"value2", 2});
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1}, {"value2", 2});
         env.FetchMeta({});
         env.FetchMeta({{"meta.value","1"}});
         env.FetchMeta({{"meta.value","1"}, {"meta.value2","2"}});
     }
 
     Y_UNIT_TEST(WriteWithContext) {
-        using namespace NKikimr::NStructuredLog;
+        using namespace NActors::NStructuredLog;
 
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::JSON_FORMAT);
 
         {
             TLogStack::TLogGuard g;
-            YDBLOG_UPDATE_CONTEXT({"context", 1});
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+            YDB_LOG_UPDATE_CONTEXT({"context", 1});
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
             env.FetchMeta({{"meta.context", "1"}});
             env.FetchMeta({{"meta.context", "1"}, {"meta.value", "100"}});
@@ -620,31 +622,31 @@ Y_UNIT_TEST_SUITE(TWriteMetaLogTest) {
 
         {
             TLogStack::TLogGuard g;
-            YDBLOG_UPDATE_CONTEXT({"context", 2});
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+            YDB_LOG_UPDATE_CONTEXT({"context", 2});
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
             env.FetchMeta({{"meta.context", "2"}});
             env.FetchMeta({{"meta.context", "2"}, {"meta.value", "100"}});
             {
                 TLogStack::TLogGuard g2;
-                YDBLOG_UPDATE_CONTEXT({"context", 3}, {"subcontext", 4});
-                YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-                YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+                YDB_LOG_UPDATE_CONTEXT({"context", 3}, {"subcontext", 4});
+                YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+                YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
                 env.FetchMeta({{"meta.context", "3"}, {"meta.subcontext", "4"}});
                 env.FetchMeta({{"meta.context", "3"}, {"meta.subcontext", "4"}, {"meta.value", "100"}});
             }
 
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-            YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+            YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
             env.FetchMeta({{"meta.context", "2"}});
             env.FetchMeta({{"meta.context", "2"}, {"meta.value", "100"}});
         }
 
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message");
-        YDBLOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message");
+        YDB_LOG_CTX_COMP_EMERG(env, 1, "Test message", {"value", 100});
 
         env.FetchMeta({});
         env.FetchMeta({{"meta.value", "100"}});
@@ -658,9 +660,9 @@ Y_UNIT_TEST_SUITE(TWriteTextLogTest) {
         env.StartAccumulateMessages(TSettings::ELogFormat::PLAIN_FULL_FORMAT);
 
         MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message");
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDBLOG_CREATE_MESSAGE({"value1", 1}));
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDBLOG_CREATE_MESSAGE({"value2", 2}));
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDBLOG_CREATE_MESSAGE({"value1", 1}, {"value2", 2}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDB_LOG_CREATE_MESSAGE({"value1", 1}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDB_LOG_CREATE_MESSAGE({"value2", 2}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDB_LOG_CREATE_MESSAGE({"value1", 1}, {"value2", 2}));
 
         env.FlushLogBuffer();
 
@@ -674,13 +676,13 @@ Y_UNIT_TEST_SUITE(TWriteTextLogTest) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::PLAIN_FULL_FORMAT);
 
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1}, {"value2", 2});
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1}, {"value2", 2});
 
-        env.FetchMessage("1970-01-01T23:59:50.000000Z :FAKE DEBUG: log_ut.cpp:677: Test message ");
-        env.FetchMessage("1970-01-01T23:59:50.000000Z :FAKE DEBUG: log_ut.cpp:678: Test message with data value=1");
-        env.FetchMessage("1970-01-01T23:59:50.000000Z :FAKE DEBUG: log_ut.cpp:679: Test message with data value=1 value2=2");
+        env.FetchMessage("1970-01-01T23:59:50.000000Z :FAKE DEBUG: log_ut.cpp:679: Test message ");
+        env.FetchMessage("1970-01-01T23:59:50.000000Z :FAKE DEBUG: log_ut.cpp:680: Test message with data value=1");
+        env.FetchMessage("1970-01-01T23:59:50.000000Z :FAKE DEBUG: log_ut.cpp:681: Test message with data value=1 value2=2");
     }
 }
 
@@ -691,9 +693,9 @@ Y_UNIT_TEST_SUITE(TWriteShortTextLogTest) {
         env.StartAccumulateMessages(TSettings::ELogFormat::PLAIN_SHORT_FORMAT);
 
         MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message");
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDBLOG_CREATE_MESSAGE({"value1", 1}));
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDBLOG_CREATE_MESSAGE({"value2", 2}));
-        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDBLOG_CREATE_MESSAGE({"value1", 1}, {"value2", 2}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message1", YDB_LOG_CREATE_MESSAGE({"value1", 1}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDB_LOG_CREATE_MESSAGE({"value2", 2}));
+        MemStructLogAdapter(env, NLog::EPriority::PRI_DEBUG, 0, nullptr, 0, "My log message2", YDB_LOG_CREATE_MESSAGE({"value1", 1}, {"value2", 2}));
 
         env.FlushLogBuffer();
 
@@ -707,9 +709,9 @@ Y_UNIT_TEST_SUITE(TWriteShortTextLogTest) {
         TFixture env{NoBufferSettings()};
         env.StartAccumulateMessages(TSettings::ELogFormat::PLAIN_SHORT_FORMAT);
 
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
-        YDBLOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1}, {"value2", 2});
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1});
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with data", {"value", 1}, {"value2", 2});
 
         env.FetchMessage("FAKE: Test message ");
         env.FetchMessage("FAKE: Test message with data value=1");

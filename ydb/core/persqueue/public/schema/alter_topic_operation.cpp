@@ -31,7 +31,7 @@ public:
     }
 
     void OnException(const std::exception& exc) override {
-        ReplyAndDie(Ydb::StatusIds::INTERNAL_ERROR, exc.what());
+        Send(ParentId, new TEvCreateTopicResponse(Ydb::StatusIds::INTERNAL_ERROR, exc.what(), NKikimrSchemeOp::TModifyScheme()), 0, Settings.Cookie);
     }
 
 private:
@@ -99,10 +99,9 @@ private:
             << (ev->Get()->Success ? ev->Get()->ClustersList->DebugString() : "error"));
 
         auto& response = *ev->Get();
-        if (!response.Success) {
-            return ReplyAndDie(Ydb::StatusIds::INTERNAL_ERROR, "Failed to get clusters list");
+        if (response.Success) {
+            ClustersList = std::move(response.ClustersList);
         }
-        ClustersList = std::move(response.ClustersList);
 
         return DoAlter();
     }
@@ -138,6 +137,7 @@ private:
         modifyScheme.SetOperationType(NKikimrSchemeOp::EOperationType::ESchemeOpAlterPersQueueGroup);
         modifyScheme.SetWorkingDir(workingDir);
         modifyScheme.SetAllowAccessToPrivatePaths(true);
+        modifyScheme.SetSuccessOnNotExist(Settings.IfExists);
 
         auto* config = modifyScheme.MutableAlterPersQueueGroup();
 
@@ -164,12 +164,16 @@ private:
 
         ModifyScheme = modifyScheme;
 
-        RegisterWithSameMailbox(CreateSchemaOperation(
-            SelfId(),
-            TopicInfo.RealPath,
-            std::move(proposal),
-            Settings.Cookie
-        ));
+        if (Settings.PrepareOnly) {
+            return ReplyAndDie(Ydb::StatusIds::SUCCESS, "");
+        } else {
+            RegisterWithSameMailbox(CreateSchemaOperation(
+                SelfId(),
+                TopicInfo.RealPath,
+                std::move(proposal),
+                Settings.Cookie
+            ));
+        }
     }
 
     void Handle(TEvSchemaOperationResponse::TPtr& ev) {
@@ -188,7 +192,7 @@ private:
 private:
     void ReplyAndDie(Ydb::StatusIds::StatusCode errorCode, TString&& errorMessage) {
         LOG_D("ReplyAndDie " << errorCode << " '" << errorMessage << "'");
-        if (errorCode == Ydb::StatusIds::SUCCESS) {
+        if (errorCode == Ydb::StatusIds::SUCCESS && !Settings.PrepareOnly) {
             ModifyScheme = {};
         }
         Send(ParentId, new TEvAlterTopicResponse(errorCode, std::move(errorMessage), std::move(ModifyScheme)), 0, Settings.Cookie);

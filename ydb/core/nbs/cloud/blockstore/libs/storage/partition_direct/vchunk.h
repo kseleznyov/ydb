@@ -57,6 +57,10 @@ public:
         ui64 lsn,
         const NWilson::TTraceId& traceId);
 
+    [[nodiscard]] const TVChunkConfig& GetConfig() const;
+    [[nodiscard]] ui64 GetPBufferUsedSize(ui8 hostIndex) const;
+    [[nodiscard]] TString DebugPrintDirtyMap();
+
 private:
     void UpdateDirtyMap(const TDBGRestoreResponse& response);
 
@@ -105,7 +109,7 @@ private:
     const TDuration WriteRequestTimeout;
     const TDuration TraceSamplePeriod;
 
-    TBlocksDirtyMap BlocksDirtyMap{BlockSize, BlocksCount};
+    TBlocksDirtyMap BlocksDirtyMap;
     bool DirtyMapRestored = false;
 
     TVChunkCounters Counters;

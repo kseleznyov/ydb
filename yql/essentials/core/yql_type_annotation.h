@@ -468,7 +468,7 @@ struct TTypeAnnotationContext: public TThrRefBase {
     THashMap<std::tuple<TString, TString, const TTypeAnnotationNode*>, TUdfCachedInfo> UdfTypeCache; // (name,typecfg,type)->info
     bool UseTableMetaFromGraph = false;
     bool DiscoveryMode = false;
-    bool WindowNewPipeline = false;
+    bool WindowNewPipeline = true;
     bool ForceDq = false;
     bool DqCaptured = false; // TODO: Add before/after recapture transformers
     EFallbackPolicy DqFallbackPolicy = EFallbackPolicy::Default;
@@ -510,7 +510,7 @@ struct TTypeAnnotationContext: public TThrRefBase {
     TLineageSettings LineageSettings;
     bool FuzzUntypedLambda = false;
     bool FuzzUniversal = false;
-    TRuntimeSettings::TPtr RuntimeSettings;
+    TRuntimeSettings::TConstPtr RuntimeSettings;
 
     THashMap<TString, NLayers::IRemoteLayerProviderPtr> RemoteLayerProviderByName;
     NLayers::ILayersRegistryPtr LayersRegistry;

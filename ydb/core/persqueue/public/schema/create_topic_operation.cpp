@@ -1,5 +1,6 @@
 #include "create_topic_operation.h"
 #include "schema_operation.h"
+#include "schema_propose.h"
 
 #include <ydb/core/persqueue/common/actor.h>
 #include <ydb/core/persqueue/public/cluster_tracker/cluster_tracker.h>
@@ -36,7 +37,7 @@ public:
     }
 
     void OnException(const std::exception& exc) override {
-        ReplyAndDie(Ydb::StatusIds::INTERNAL_ERROR, exc.what());
+        Send(ParentId, new TEvCreateTopicResponse(Ydb::StatusIds::INTERNAL_ERROR, exc.what(), NKikimrSchemeOp::TModifyScheme()), 0, Settings.Cookie);
     }
 
 private:
@@ -50,11 +51,9 @@ private:
         LOG_D("Handle NPQ::NClusterTracker::TEvClusterTracker::TEvGetClustersListResponse");
 
         auto& response = *ev->Get();
-        if (!response.Success) {
-            return ReplyAndDie(Ydb::StatusIds::INTERNAL_ERROR, "Failed to get clusters list");
+        if (response.Success) {
+            ClustersList = std::move(response.ClustersList);
         }
-
-        ClustersList = std::move(response.ClustersList);
 
         return DoCreate();
     }
@@ -68,7 +67,7 @@ private:
 
 private:
     void DoCreate() {
-        LOG_D("DoCreate");
+        LOG_D("DoCreate IfNotExists: " << Settings.IfNotExists);
         Become(&TCreateTopicOperationActor::CreateState);
 
         auto proposal = std::make_unique<TEvTxUserProxy::TEvProposeTransaction>();
@@ -80,32 +79,21 @@ private:
         }
 
         auto path = NormalizePath(Settings.Database, Settings.Strategy->GetTopicName());
-
-        NKikimrSchemeOp::TModifyScheme& modifyScheme = *proposal->Record.MutableTransaction()->MutableModifyScheme();
-
         auto [workingDir, name] = GetWorkingDirAndName(path);
         if (workingDir.empty()) {
             return ReplyAndDie(Ydb::StatusIds::SCHEME_ERROR, "Wrong topic name");
         }
 
-        modifyScheme.SetOperationType(NKikimrSchemeOp::EOperationType::ESchemeOpCreatePersQueueGroup);
-        modifyScheme.SetWorkingDir(workingDir);
+        NKikimrSchemeOp::TModifyScheme& modifyScheme = *proposal->Record.MutableTransaction()->MutableModifyScheme();
 
-        auto* config = modifyScheme.MutableCreatePersQueueGroup();
-        config->SetName(name);
-
-        auto result = Settings.Strategy->ApplyChanges(
-            GetLocalClusterName(ClustersList),
-            Settings.Database,
-            modifyScheme,
-            *config
-        );
-        if (result) {
-            result = ValidateConfig(config->GetPQTabletConfig(), EOperation::Create);
-        }
-        if (result) {
-            result = ValidateLocalCluster(ClustersList, config->GetPQTabletConfig());
-        }
+        auto result = ProposeCreateTopic(modifyScheme, TProposeCreateTopicSettings{
+            .Database = Settings.Database,
+            .WorkingDir = workingDir,
+            .Name = name,
+            .ClustersList = ClustersList,
+            .Strategy = Settings.Strategy.get(),
+            .IfNotExists = Settings.IfNotExists,
+        });
 
         if (!result) {
             return ReplyAndDie(result.GetStatus(), std::move(result.GetErrorMessage()));
@@ -113,12 +101,16 @@ private:
 
         ModifyScheme = modifyScheme;
 
-        RegisterWithSameMailbox(CreateSchemaOperation(
-            SelfId(),
-            path,
-            std::move(proposal),
-            Settings.Cookie
-        ));
+        if (Settings.PrepareOnly) {
+            return ReplyAndDie(Ydb::StatusIds::SUCCESS, "");
+        } else {
+            RegisterWithSameMailbox(CreateSchemaOperation(
+                SelfId(),
+                path,
+                std::move(proposal),
+                Settings.Cookie
+            ));
+        }
     }
 
     void Handle(TEvSchemaOperationResponse::TPtr& ev) {
@@ -137,8 +129,12 @@ private:
 private:
     void ReplyAndDie(Ydb::StatusIds::StatusCode errorCode, TString&& errorMessage) {
         LOG_D("ReplyAndDie " << errorCode << " '" << errorMessage << "'");
-        if (errorCode == Ydb::StatusIds::SUCCESS) {
+        if ((errorCode == Ydb::StatusIds::SUCCESS || errorCode == Ydb::StatusIds::ALREADY_EXISTS) && !Settings.PrepareOnly) {
             ModifyScheme = {};
+        }
+        if (Settings.IfNotExists && errorCode == Ydb::StatusIds::ALREADY_EXISTS) {
+            errorCode = Ydb::StatusIds::SUCCESS;
+            errorMessage = "";
         }
         Send(ParentId, new TEvCreateTopicResponse(errorCode, std::move(errorMessage), std::move(ModifyScheme)), 0, Settings.Cookie);
         PassAway();
@@ -152,6 +148,29 @@ private:
     NPQ::NClusterTracker::TClustersList::TConstPtr ClustersList;
 };
 
+}
+
+TResult ProposeCreateTopic(NKikimrSchemeOp::TModifyScheme& modifyScheme, TProposeCreateTopicSettings&& settings) {
+    modifyScheme.SetOperationType(NKikimrSchemeOp::EOperationType::ESchemeOpCreatePersQueueGroup);
+    modifyScheme.SetWorkingDir(settings.WorkingDir);
+    modifyScheme.SetFailedOnAlreadyExists(!settings.IfNotExists);
+
+    auto* config = modifyScheme.MutableCreatePersQueueGroup();
+    config->SetName(settings.Name);
+
+    auto result = settings.Strategy->ApplyChanges(
+        GetLocalClusterName(settings.ClustersList),
+        settings.Database,
+        modifyScheme,
+        *config
+    );
+    if (result) {
+        result = ValidateConfig(config->GetPQTabletConfig(), EOperation::Create);
+    }
+    if (result) {
+        result = ValidateLocalCluster(settings.ClustersList, config->GetPQTabletConfig());
+    }
+    return result;
 }
 
 IActor* CreateCreateTopicOperationActor(TActorId parentId, TCreateTopicOperationSettings&& settings) {

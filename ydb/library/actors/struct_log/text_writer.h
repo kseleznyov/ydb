@@ -12,33 +12,13 @@
 #include <unordered_set>
 #include <vector>
 
-namespace NKikimr::NStructuredLog {
+namespace NActors::NStructuredLog {
 
 class TTextWriter {
 public:
     TTextWriter() = default;
 
-    bool Write(TStringBuilder& outputText, const TStructuredMessage& message) {
-        OutputText = &outputText;
-        FirstValue = true;
-
-        auto processValue =
-            [&](const std::vector<TKeyName>& name, TNativeTypeCode typeCode, const void* data, std::size_t length) {
-                auto it = TypeValueWriterMap.find(typeCode);
-                if (it != end(TypeValueWriterMap)) {
-                    ValueWriter.KeyName = &name;
-                    return it->second(data, length);
-                } else {
-                    return false;
-                }
-            };
-        if (!message.ForEachSerialized(processValue)) {
-            return false;
-        };
-
-        OutputText = nullptr;
-        return true;
-    }
+    bool Write(TStringBuilder& outputText, const TStructuredMessage& message);
 
 protected:
     TStringBuilder* OutputText{nullptr};
@@ -48,7 +28,7 @@ protected:
         TTextWriter& Writer;
         const std::vector<TKeyName>* KeyName{nullptr};
 
-        TValueWriter(TTextWriter& writer) : Writer(writer) {}
+        TValueWriter(TTextWriter& writer);
 
         template <typename T>
         void operator()(const T& value) const {
@@ -67,6 +47,12 @@ protected:
                 } else {
                     outputText << ".";
                 }
+                auto str = keyItem.ToString();
+                for(auto& ch: str) {
+                    if (ch == '\n') {
+                        ch = ' ';
+                    }
+                }
                 outputText << keyItem.ToString();
             }
             outputText << "=";
@@ -77,4 +63,4 @@ protected:
     TInvokerMap TypeValueWriterMap = TTypesMapping::CreateInvokerMap(ValueWriter);
 };
 
-}  // namespace NKikimr::NStructuredLog
+}  // namespace NActors::NStructuredLog

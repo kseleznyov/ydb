@@ -1,7 +1,5 @@
 #include "ddisk_data_copier.h"
 
-#include "read_request.h"
-
 #include <ydb/core/nbs/cloud/blockstore/libs/common/constants.h>
 #include <ydb/core/nbs/cloud/blockstore/libs/service/context.h>
 #include <ydb/core/nbs/cloud/blockstore/libs/service/partition_direct_service.h>
@@ -50,7 +48,7 @@ TDDiskDataCopier::TDDiskDataCopier(
     IPartitionDirectServicePtr partitionDirectService,
     IDirectBlockGroupPtr directBlockGroup,
     TBlocksDirtyMap* dirtyMap,
-    ELocation destination)
+    THostIndex destination)
     : ActorSystem(actorSystem)
     , VChunkConfig(vChunkConfig)
     , VolumeConfig(partitionDirectService->GetVolumeConfig())
@@ -59,7 +57,7 @@ TDDiskDataCopier::TDDiskDataCopier(
     , Destination(destination)
     , DirtyMap(dirtyMap)
 {
-    Y_ASSERT(IsDDisk(Destination));
+    Y_ASSERT(Destination < VChunkConfig.DDiskHosts.HostCount());
 }
 
 TFuture<TDDiskDataCopier::EResult> TDDiskDataCopier::Start()
@@ -141,7 +139,7 @@ void TDDiskDataCopier::StartCopyRange()
 
     auto copyRangeState = std::make_shared<TCopyRangeRequestState>(
         range,
-        TRangeLock(DirtyMap, range, TLocationMask::MakeOne(Destination)),
+        TRangeLock(DirtyMap, range, THostMask::MakeOne(Destination)),
         CreateSpan());
 
     DirtyMap->SetFlushWatermark(Destination, futureWatermark);
@@ -160,7 +158,7 @@ void TDDiskDataCopier::StartCopyRange()
     auto callContext = MakeIntrusive<TCallContext>(requestId);
     callContext->RootTraceId = copyRangeState->Span.GetTraceId();
 
-    auto readExecutor = std::make_shared<TReadRequestExecutor>(
+    auto readExecutor = CreateReadRequestExecutor(
         ActorSystem,
         VChunkConfig,
         DirectBlockGroup,
@@ -173,7 +171,7 @@ void TDDiskDataCopier::StartCopyRange()
     future.Subscribe(
         [weakSelf = weak_from_this(),
          copyRangeState = std::move(copyRangeState)]   //
-        (const TFuture<TReadRequestExecutor::TResponse>& f) mutable
+        (const TFuture<IReadRequestExecutor::TResponse>& f) mutable
         {
             if (auto self = weakSelf.lock()) {
                 self->OnRangeRead(std::move(copyRangeState), f.GetValue());
@@ -184,7 +182,7 @@ void TDDiskDataCopier::StartCopyRange()
 
 void TDDiskDataCopier::OnRangeRead(
     TCopyRangeRequestStatePtr copyRangeState,
-    const TReadRequestExecutor::TResponse& response)
+    const IReadRequestExecutor::TResponse& response)
 {
     copyRangeState->Span.Event("OnRangeRead");
 
@@ -202,7 +200,7 @@ void TDDiskDataCopier::OnRangeRead(
 
     auto writeFuture = DirectBlockGroup->WriteBlocksToDDisk(
         VChunkConfig.VChunkIndex,
-        VChunkConfig.GetHostIndex(Destination),
+        Destination,
         copyRangeState->Range,
         copyRangeState->GetSgList(),
         NWilson::TTraceId());

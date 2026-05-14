@@ -1,25 +1,31 @@
 #include "host_stat.h"
 
+#include <ydb/core/nbs/cloud/storage/core/libs/common/format.h>
+
+#include <util/string/builder.h>
+#include <util/string/cast.h>
+
 namespace NYdb::NBS::NBlockStore::NStorage::NPartitionDirect {
 
 ////////////////////////////////////////////////////////////////////////////////
 
 void THostStat::OnRequest(EOperation operation)
 {
-    ++InflightByOperation[static_cast<size_t>(operation)];
+    ++AccessInflightCount(operation);
 }
 
 void THostStat::OnError(TInstant now, EOperation operation)
 {
-    auto& inflight = InflightByOperation[static_cast<size_t>(operation)];
+    auto& inflight = AccessInflightCount(operation);
     // Clamp to 0 to be defensive against unbalanced OnRequest/OnError pairs.
     if (inflight > 0) {
         --inflight;
     }
 
-    if (!LastError) {
-        LastError = now;
+    if (!FirstErrorAt) {
+        FirstErrorAt = now;
     }
+    LastErrorAt = now;
     ++ErrorCount;
 }
 
@@ -30,28 +36,69 @@ void THostStat::OnSuccess(
 {
     Y_UNUSED(executionTime);
 
-    auto& inflight = InflightByOperation[static_cast<size_t>(operation)];
+    auto& inflight = AccessInflightCount(operation);
     if (inflight > 0) {
         --inflight;
     }
 
-    LastSuccess = now;
-    LastError = TInstant();
+    LastSuccessAt = now;
+    FirstErrorAt = TInstant();
+    LastErrorAt = TInstant();
     ErrorCount = 0;
 }
 
-TDuration THostStat::ErrorsDuration(TInstant now, size_t* errorCount) const
+THostStat::TErrorsInfo THostStat::GetErrorsInfo(TInstant now) const
 {
-    if (errorCount) {
-        *errorCount = ErrorCount;
+    TErrorsInfo result;
+    if (FirstErrorAt) {
+        result.FromFirstError = now - FirstErrorAt;
     }
-    if (LastError) {
-        return now - LastError;
+    if (LastErrorAt) {
+        result.FromLastError = now - LastErrorAt;
     }
-    return TDuration();
+    result.ErrorCount = ErrorCount;
+    return result;
 }
 
 size_t THostStat::InflightCount(EOperation operation) const
+{
+    return InflightByOperation[static_cast<size_t>(operation)];
+}
+
+TString THostStat::DebugPrint() const
+{
+    TStringBuilder inflight;
+    for (size_t i = 0; i < InflightByOperation.size(); ++i) {
+        if (InflightByOperation[i] == 0) {
+            continue;
+        }
+        if (!inflight.empty()) {
+            inflight << ", ";
+        }
+
+        inflight << ToString(static_cast<EOperation>(i)) << ": "
+                 << InflightByOperation[i];
+    }
+
+    TStringBuilder sb;
+    const TInstant now = TInstant::Now();
+    if (LastSuccessAt) {
+        sb << "LastSuccess: " << FormatDuration(now - LastSuccessAt);
+    }
+    if (FirstErrorAt) {
+        sb << "FirstError: " << FormatDuration(now - FirstErrorAt);
+    }
+    if (LastErrorAt) {
+        sb << "LastError: " << FormatDuration(now - LastErrorAt);
+    }
+
+    sb << ", ErrorCount: " << ErrorCount << ", InflightByOperation: ["
+       << inflight << "]";
+
+    return sb;
+}
+
+size_t& THostStat::AccessInflightCount(EOperation operation)
 {
     return InflightByOperation[static_cast<size_t>(operation)];
 }
