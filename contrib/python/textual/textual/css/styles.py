@@ -43,6 +43,7 @@ from textual.css.constants import (
     VALID_BOX_SIZING,
     VALID_CONSTRAIN,
     VALID_DISPLAY,
+    VALID_EXPAND,
     VALID_OVERFLOW,
     VALID_OVERLAY,
     VALID_POSITION,
@@ -61,6 +62,7 @@ from textual.css.types import (
     BoxSizing,
     Constrain,
     Display,
+    Expand,
     Overflow,
     Overlay,
     ScrollbarGutter,
@@ -203,6 +205,7 @@ class RulesMap(TypedDict, total=False):
 
     text_wrap: TextWrap
     text_overflow: TextOverflow
+    expand: Expand
 
     line_pad: int
 
@@ -250,7 +253,7 @@ class StylesBase:
 
     node: DOMNode | None = None
 
-    display = StringEnumProperty(VALID_DISPLAY, "block", layout=True)
+    display = StringEnumProperty(VALID_DISPLAY, "block", layout=True, display=True)
     """Set the display of the widget, defining how it's rendered.
 
     Valid values are "block" or "none".
@@ -281,7 +284,7 @@ class StylesBase:
     layout = LayoutProperty()
     """Set the layout of the widget, defining how it's children are laid out.
     
-    Valid values are "grid", "horizontal", and "vertical" or None to clear any layout
+    Valid values are "grid", "stream", "horizontal", or "vertical" or None to clear any layout
     that was set at runtime.
 
     Raises:
@@ -492,6 +495,7 @@ class StylesBase:
     text_overflow: StringEnumProperty[TextOverflow] = StringEnumProperty(
         VALID_TEXT_OVERFLOW, "fold"
     )
+    expand: StringEnumProperty[Expand] = StringEnumProperty(VALID_EXPAND, "greedy")
     line_pad = IntegerProperty(default=0, layout=True)
     """Padding added to left and right of lines."""
 
@@ -572,7 +576,6 @@ class StylesBase:
             yield getattr(self, key)
 
     def items(self) -> Iterable[tuple[str, object]]:
-        get_rule = self.get_rule
         for key in RULE_NAMES:
             yield (key, getattr(self, key))
 
@@ -1162,9 +1165,9 @@ class Styles(StylesBase):
         if "min_height" in rules:
             append_declaration("min-height", str(self.min_height))
         if "max_width" in rules:
-            append_declaration("max-width", str(self.min_width))
+            append_declaration("max-width", str(self.max_width))
         if "max_height" in rules:
-            append_declaration("max-height", str(self.min_height))
+            append_declaration("max-height", str(self.max_height))
         if "transitions" in rules:
             append_declaration(
                 "transition",
@@ -1289,6 +1292,8 @@ class Styles(StylesBase):
             append_declaration("text-wrap", self.text_wrap)
         if "text_overflow" in rules:
             append_declaration("text-overflow", self.text_overflow)
+        if "expand" in rules:
+            append_declaration("expand", self.expand)
         if "line_pad" in rules:
             append_declaration("line-pad", str(self.line_pad))
         lines.sort()
@@ -1347,7 +1352,7 @@ class RenderStyles(StylesBase):
 
     @property
     def gutter(self) -> Spacing:
-        """Get space around widget.
+        """Get space around widget (padding + border)
 
         Returns:
             Space around widget content.

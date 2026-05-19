@@ -25,10 +25,9 @@ public:
         const TVector<IDirectBlockGroupPtr>& directBlockGroups,
         ui32 syncRequestsBatchSize,
         ui64 vChunkSize,
-        TDuration writeHedgingDelay,
-        TDuration writeRequestTimeout,
-        TDuration traceSamplePeriod,
         NMonitoring::TDynamicCounterPtr counters);
+
+    void Run();
 
     NThreading::TFuture<TReadBlocksLocalResponse> ReadBlocksLocal(
         TCallContextPtr callContext,
@@ -38,8 +37,6 @@ public:
     NThreading::TFuture<TWriteBlocksLocalResponse> WriteBlocksLocal(
         TCallContextPtr callContext,
         std::shared_ptr<TWriteBlocksLocalRequest> request,
-        EWriteMode writeMode,
-        TDuration pbufferReplyTimeout,
         ui64 lsn,
         const NWilson::TTraceId& traceId);
 
