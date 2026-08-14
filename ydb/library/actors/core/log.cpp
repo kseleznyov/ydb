@@ -179,6 +179,10 @@ namespace NActors {
         Y_UNUSED(settings);
     }
 
+    void TLoggerActor::AddSink(NStructuredLog::ILogSinkSPtr sink) {
+        Sinks.push_back(sink);
+    }
+
     void TLoggerActor::FlushLogBufferMessage() {
         if (!LogBuffer.IsEmpty()) {
             NLog::TEvLog *log = LogBuffer.Pop();
@@ -538,6 +542,19 @@ namespace NActors {
     constexpr size_t TimeBufSize = 512;
 
     bool TLoggerActor::OutputRecord(NLog::TEvLog *evLog) noexcept {
+        if (!Sinks.empty()) {
+            NStructuredLog::TLogMessage message {
+                .Time = evLog->Stamp,
+                .Priority = evLog->Level.ToPrio(),
+                .Component = evLog->Component,
+                .FileName = evLog->FileName,
+                .LineNumber = evLog->LineNumber,
+                .TextMessage = evLog->Line,
+                .StructuredMessage = evLog->StructuredMessage.GetOrElse({})};
+            for(auto& sink: Sinks) {
+                sink->Write(message);
+            }
+        }
         return OutputRecord(
             evLog->Stamp,
             evLog->Level.ToPrio(),

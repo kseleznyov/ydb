@@ -3,6 +3,7 @@
 #include <library/cpp/testing/unittest/registar.h>
 
 #include <ydb/library/actors/struct_log/create_message.h>
+#include <ydb/library/actors/struct_log/log_sink.h>
 #include <ydb/library/actors/struct_log/structured_message.h>
 
 #include <ydb/library/actors/core/log.h>
@@ -100,6 +101,20 @@ namespace {
             Runtime.Initialize();
             LogBackend.reset(new TMockBackend{writeImpl});
             LoggerActor = Runtime.Register(new TLoggerActor{settings, LogBackend, Counters});
+            Runtime.SetScheduledEventFilter([] (auto&&, auto&&, auto&&, auto) {
+                return false;
+            });
+        }
+
+        TFixture(
+            TIntrusivePtr<TSettings> settings,
+            NStructuredLog::ILogSinkSPtr sink) : Settings(settings)
+        {
+            Runtime.Initialize();
+            LogBackend.reset(new TMockBackend{ThrowAlways});
+            auto logger = new TLoggerActor{settings, LogBackend, Counters};
+            logger->AddSink(sink);
+            LoggerActor = Runtime.Register(logger);
             Runtime.SetScheduledEventFilter([] (auto&&, auto&&, auto&&, auto) {
                 return false;
             });
@@ -796,5 +811,32 @@ Y_UNIT_TEST_SUITE(TLogEscaping) {
             }
 
         }
+    }
+}
+
+Y_UNIT_TEST_SUITE(TWriteLogSink) {
+    class TTestLogSink : public NStructuredLog::ILogSink {
+    public:
+        std::vector<TLogMessage>& Messages;
+
+        TTestLogSink(std::vector<TLogMessage>& messages): Messages(messages) {}
+
+        void Write(const TLogMessage& message) override {
+            Messages.push_back(message);
+        }
+    };
+
+    Y_UNIT_TEST(SimpleWrite) {
+        std::vector<TLogMessage> messages;
+        NStructuredLog::ILogSinkSPtr sink = std::make_shared<TTestLogSink>(messages);
+        TFixture env{NoBufferSettings(), sink};
+        env.StartAccumulateMessages(TSettings::ELogFormat::PLAIN_SHORT_FORMAT);
+
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message");
+        YDB_LOG_CTX_COMP(env, PRI_DEBUG, 1, "Test message with value", {"value", "text"});
+
+        UNIT_ASSERT_VALUES_EQUAL(messages.size(), 2);
+        UNIT_ASSERT_VALUES_EQUAL(messages[0].TextMessage, "Test message");
+        UNIT_ASSERT_VALUES_EQUAL(messages[1].TextMessage, "Test message with value");
     }
 }
