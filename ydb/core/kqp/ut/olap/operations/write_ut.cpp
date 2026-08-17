@@ -1,3 +1,5 @@
+#include "write_log_to_olap.h"
+
 #include <ydb/core/kqp/ut/olap/combinatory/variator.h>
 #include <ydb/core/kqp/ut/olap/helpers/get_value.h>
 #include <ydb/core/kqp/ut/olap/helpers/local.h>
@@ -638,6 +640,47 @@ Y_UNIT_TEST_SUITE(KqpOlapWrite) {
             UNIT_ASSERT_VALUES_EQUAL(resultSet.ColumnParser(0).GetInt32(), 2);
             UNIT_ASSERT_VALUES_EQUAL(resultSet.ColumnParser(1).GetUint32(), 200);
         }
+    }
+}
+
+Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
+    Y_UNIT_TEST(CreateTable) {
+        // @todo
+    }
+
+    Y_UNIT_TEST(ExistsTable) {
+        // @todo
+    }
+
+    Y_UNIT_TEST(AddColumn) {
+        // @todo
+    }
+
+    Y_UNIT_TEST(RemoveColumn) {
+        // @todo
+    }
+
+    Y_UNIT_TEST(WriteSingleLine) {
+        // @todo
+        auto csController = NKikimr::NYDBTest::TControllers::RegisterCSControllerGuard<NKikimr::NOlap::TWaitCompactionController>();
+        csController->SetSmallSizeDetector(1000000);
+        csController->SetIndexWriteControllerEnabled(false);
+        csController->SetOverridePeriodicWakeupActivationPeriod(TDuration::Seconds(1));
+        csController->SetOverrideBlobPutResultOnWriteValue(NKikimrProto::EReplyStatus::BLOCKED);
+        Singleton<NKikimr::NWrappers::NExternalStorage::TFakeExternalStorage>()->ResetWriteCounters();
+
+        auto settings = TKikimrSettings().SetWithSampleTables(false);
+        TKikimrRunner kikimr(settings);
+        kikimr.GetTestServer().GetRuntime()->GetAppData().FeatureFlags.SetEnableWritePortionsOnInsert(true);
+        TLocalHelper(kikimr).CreateTestOlapTable();
+        /* Tests::NCommon::TLoggerInit(kikimr)
+            .SetComponents({ NKikimrServices::TX_COLUMNSHARD }, "CS")
+            .SetPriority(NActors::NLog::PRI_DEBUG)
+            .Initialize(); */
+        /* {
+            auto batch = TLocalHelper(kikimr).TestArrowBatch(30000, 1000000, 11000);
+            TLocalHelper(kikimr).SendDataViaActorSystem("/Root/olapStore/olapTable", batch, Ydb::StatusIds::INTERNAL_ERROR);
+        } */
     }
 }
 
