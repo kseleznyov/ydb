@@ -268,6 +268,7 @@ namespace NActors {
         static void Throttle(const NLog::TSettings& settings);
 
         void AddSink(NStructuredLog::ILogSinkSPtr sink);
+        static TLoggerActor* GetInstance();
     private:
         TIntrusivePtr<NLog::TSettings> Settings;
         std::shared_ptr<TLogBackend> LogBackend;
