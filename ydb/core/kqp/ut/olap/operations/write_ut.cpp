@@ -8,6 +8,7 @@
 #include <ydb/core/kqp/ut/olap/helpers/writer.h>
 
 #include <ydb/core/base/tablet_pipecache.h>
+#include <ydb/core/protos/schemeshard/operations.pb.h>
 #include <ydb/core/tx/columnshard/hooks/testing/controller.h>
 #include <ydb/core/tx/columnshard/test_helper/controllers.h>
 #include <ydb/core/protos/long_tx_service_config.pb.h>
@@ -660,27 +661,151 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
         // @todo
     }
 
-    Y_UNIT_TEST(WriteSingleLine) {
-        // @todo
-        auto csController = NKikimr::NYDBTest::TControllers::RegisterCSControllerGuard<NKikimr::NOlap::TWaitCompactionController>();
-        csController->SetSmallSizeDetector(1000000);
-        csController->SetIndexWriteControllerEnabled(false);
-        csController->SetOverridePeriodicWakeupActivationPeriod(TDuration::Seconds(1));
-        csController->SetOverrideBlobPutResultOnWriteValue(NKikimrProto::EReplyStatus::BLOCKED);
-        Singleton<NKikimr::NWrappers::NExternalStorage::TFakeExternalStorage>()->ResetWriteCounters();
+    inline ui64 ChangeStateStorage(ui64 tabletId, ui32 id) {
+        const ui64 mask = static_cast<ui64>(0xff) << 56;
+        return (tabletId & ~mask) | static_cast<ui64>(id & 0xff) << 56;
+    }
 
-        auto settings = TKikimrSettings().SetWithSampleTables(false);
+    template <typename S>
+    void WaitForSchemeOperation(S& server, TActorId sender, ui64 txId) {
+        auto& runtime = *server.GetRuntime();
+        auto& settings = server.GetSettings();
+        auto request = MakeHolder<NSchemeShard::TEvSchemeShard::TEvNotifyTxCompletion>();
+        request->Record.SetTxId(txId);
+        auto tid = ChangeStateStorage(Tests::SchemeRoot, settings.Domain);
+        runtime.SendToPipe(tid, sender, request.Release(), 0, GetPipeConfigWithRetries());
+        runtime.template GrabEdgeEventRethrow<NSchemeShard::TEvSchemeShard::TEvNotifyTxCompletionResult>(sender);
+    }
+
+    template <typename S>
+    void ExecuteModifyScheme(S& server, NKikimrSchemeOp::TModifyScheme& modifyScheme) {
+        auto request = std::make_unique<TEvTxUserProxy::TEvProposeTransaction>();
+        request->Record.SetExecTimeoutPeriod(Max<ui64>());
+        *request->Record.MutableTransaction()->MutableModifyScheme() = modifyScheme;
+        TActorId sender = server.GetRuntime()->AllocateEdgeActor();
+        server.GetRuntime()->Send(new IEventHandle(MakeTxProxyID(), sender, request.release()));
+        auto ev = server.GetRuntime()->template GrabEdgeEventRethrow<TEvTxUserProxy::TEvProposeTransactionStatus>(sender);
+        auto status = ev->Get()->Record.GetStatus();
+        ui64 txId = ev->Get()->Record.GetTxId();
+        UNIT_ASSERT(status != TEvTxUserProxy::TEvProposeTransactionStatus::EStatus::ExecError);
+        WaitForSchemeOperation(server, sender, txId);
+    }
+
+
+    Y_UNIT_TEST(WriteSingleLine) {
+
+        auto settings = TKikimrSettings()
+            .SetWithSampleTables(false);
         TKikimrRunner kikimr(settings);
-        kikimr.GetTestServer().GetRuntime()->GetAppData().FeatureFlags.SetEnableWritePortionsOnInsert(true);
-        TLocalHelper(kikimr).CreateTestOlapTable();
-        /* Tests::NCommon::TLoggerInit(kikimr)
-            .SetComponents({ NKikimrServices::TX_COLUMNSHARD }, "CS")
-            .SetPriority(NActors::NLog::PRI_DEBUG)
-            .Initialize(); */
-        /* {
-            auto batch = TLocalHelper(kikimr).TestArrowBatch(30000, 1000000, 11000);
-            TLocalHelper(kikimr).SendDataViaActorSystem("/Root/olapStore/olapTable", batch, Ydb::StatusIds::INTERNAL_ERROR);
-        } */
+
+        TLocalHelper helper(kikimr);
+        // Create table
+        {
+            // @was: helper.CreateTestOlapTable();
+            // @was: helper.CreateOlapTablesWithStore({"olapTable"}, "olapStore", 4, 3);
+            // @was: helper.CreateSchemaOlapTablesWithStore(helper.GetTestTableSchema(),{"olapTable"}, "olapStore", 4, 3);
+
+            {
+                TString tableSchema = helper.GetTestTableSchema();
+                TString tableName{"olapTable"};
+                TString storeName{"olapStore"};
+                ui32 storeShardsCount = 4;
+                ui32 tableShardsCount = 3;
+
+                // Create store
+                TString storeDesc = Sprintf(R"(
+                        Name: "%s"
+                        ColumnShardCount: %d
+                        SchemaPresets {
+                            Name: "default"
+                            Schema {
+                                %s
+                            }
+                        }
+                    )", storeName.c_str(), storeShardsCount, tableSchema.data());
+                // @was helper.CreateTestOlapStore(storeDesc);
+                {
+                    TString scheme = storeDesc;
+                    NKikimrSchemeOp::TColumnStoreDescription store;
+                    UNIT_ASSERT(::google::protobuf::TextFormat::ParseFromString(scheme, &store));
+                    NKikimrSchemeOp::TModifyScheme op;
+                    op.SetOperationType(NKikimrSchemeOp::EOperationType::ESchemeOpCreateColumnStore);
+                    op.SetWorkingDir("/Root");
+                    op.MutableCreateColumnStore()->CopyFrom(store);
+                    // @was: helper.ExecuteModifyScheme(op);
+                    ExecuteModifyScheme(helper.Server, op);
+                }
+
+
+                // Create table
+                auto origShardingColumns = helper.GetShardingColumns();
+                const TString shardingColumns = "[\"" + JoinSeq("\",\"", origShardingColumns) + "\"]";
+                auto shardingMethod = helper.GetShardingMethod();
+
+                TString tableSchemaDesc = Sprintf(R"(
+                    Name: "%s"
+                    ColumnShardCount: %d
+                    Sharding {
+                        HashSharding {
+                            Function: %s
+                            Columns: %s
+                        }
+                    })", tableName.c_str(), tableShardsCount, shardingMethod.data(), shardingColumns.c_str());
+
+                // @was helper.CreateTestOlapTableInternal(storeName, tableSchemaDesc);
+                {
+                    TString storeOrDirName = storeName;
+                    TString scheme = tableSchemaDesc;
+                    NKikimrSchemeOp::TColumnTableDescription table;
+                    UNIT_ASSERT(::google::protobuf::TextFormat::ParseFromString(scheme, &table));
+                    TString workingDir = "/Root";
+                    if (!storeOrDirName.empty()) {
+                        workingDir += "/" + storeOrDirName;
+                    }
+
+                    NKikimrSchemeOp::TModifyScheme op;
+                    op.SetOperationType(NKikimrSchemeOp::EOperationType::ESchemeOpCreateColumnTable);
+                    op.SetWorkingDir(workingDir);
+                    op.MutableCreateColumnTable()->CopyFrom(table);
+                    // @was: helper.ExecuteModifyScheme(op);
+                    ExecuteModifyScheme(helper.Server, op);
+                }
+            }
+        }
+
+        // Write data
+        {
+            // WriteTestData(kikimr, "/Root/olapStore/olapTable", 0, 1000000, 5);
+            helper.WithSomeNulls();
+
+            {
+                auto batch = helper.TestArrowBatch(0, 1000, 5, 1);
+                helper.SendDataViaActorSystem("/Root/olapStore/olapTable", batch);
+            }
+
+            {
+                auto batch = helper.TestArrowBatch(10, 2000, 5, 1);
+                helper.SendDataViaActorSystem("/Root/olapStore/olapTable", batch);
+            }
+        }
+
+        // Fetch and check data
+        {
+            auto client = kikimr.GetTableClient();
+            auto it = client.StreamExecuteScanQuery(R"(
+                --!syntax_v1
+
+                SELECT `timestamp`, `resource_id` FROM `/Root/olapStore/olapTable` ORDER BY `timestamp`
+            )").GetValueSync();
+
+            UNIT_ASSERT_C(it.IsSuccess(), it.GetIssues().ToString());
+            TString result = StreamResultToYson(it);
+            // CompareYson(result, R"([[["0"];1000000u];[["1"];1000001u]])");
+
+            Cerr << Endl;
+            Cerr << "RESULT:" << Endl;
+            Cerr << result << Endl;
+        }
     }
 }
 
