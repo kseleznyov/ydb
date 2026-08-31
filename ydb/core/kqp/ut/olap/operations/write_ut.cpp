@@ -7,6 +7,8 @@
 #include <ydb/core/kqp/ut/olap/helpers/typed_local.h>
 #include <ydb/core/kqp/ut/olap/helpers/writer.h>
 
+#include <ydb/core/kqp/ut/olap/operations/write_log_to_olap.h>
+
 #include <ydb/core/base/tablet_pipecache.h>
 #include <ydb/core/protos/schemeshard/operations.pb.h>
 #include <ydb/core/tx/columnshard/hooks/testing/controller.h>
@@ -661,24 +663,23 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
         // @todo
     }
 
-    inline ui64 ChangeStateStorage(ui64 tabletId, ui32 id) {
-        const ui64 mask = static_cast<ui64>(0xff) << 56;
-        return (tabletId & ~mask) | static_cast<ui64>(id & 0xff) << 56;
-    }
-
-    template <typename S>
-    void WaitForSchemeOperation(S& server, TActorId sender, ui64 txId) {
+    void WaitForSchemeOperation(Tests::TServer& server, TActorId sender, ui64 txId) {
         auto& runtime = *server.GetRuntime();
         auto& settings = server.GetSettings();
         auto request = MakeHolder<NSchemeShard::TEvSchemeShard::TEvNotifyTxCompletion>();
         request->Record.SetTxId(txId);
-        auto tid = ChangeStateStorage(Tests::SchemeRoot, settings.Domain);
-        runtime.SendToPipe(tid, sender, request.Release(), 0, GetPipeConfigWithRetries());
+
+        // auto tid = ChangeStateStorage(Tests::SchemeRoot, settings.Domain);
+        const ui64 mask = static_cast<ui64>(0xff) << 56;
+        ui64 tabletId = Tests::SchemeRoot;                                                 // @todo What value outside tests?
+        ui32 id = settings.Domain;                                                         // @todo What value outside tests?
+        auto tid = (tabletId & ~mask) | static_cast<ui64>(id & 0xff) << 56;
+
+        runtime.SendToPipe(tid, sender, request.Release(), 0, GetPipeConfigWithRetries()); // @todo What GetPipeConfigWithRetries() outside tests?
         runtime.template GrabEdgeEventRethrow<NSchemeShard::TEvSchemeShard::TEvNotifyTxCompletionResult>(sender);
     }
 
-    template <typename S>
-    void ExecuteModifyScheme(S& server, NKikimrSchemeOp::TModifyScheme& modifyScheme) {
+    void ExecuteModifyScheme(Tests::TServer& server, NKikimrSchemeOp::TModifyScheme& modifyScheme) {
         auto request = std::make_unique<TEvTxUserProxy::TEvProposeTransaction>();
         request->Record.SetExecTimeoutPeriod(Max<ui64>());
         *request->Record.MutableTransaction()->MutableModifyScheme() = modifyScheme;
@@ -691,14 +692,13 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
         WaitForSchemeOperation(server, sender, txId);
     }
 
-
     Y_UNIT_TEST(WriteSingleLine) {
 
         auto settings = TKikimrSettings()
             .SetWithSampleTables(false);
         TKikimrRunner kikimr(settings);
 
-        TLocalHelper helper(kikimr);
+        // TLocalHelper helper(kikimr);
         // Create table
         {
             // @was: helper.CreateTestOlapTable();
@@ -706,7 +706,29 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
             // @was: helper.CreateSchemaOlapTablesWithStore(helper.GetTestTableSchema(),{"olapTable"}, "olapStore", 4, 3);
 
             {
-                TString tableSchema = helper.GetTestTableSchema();
+                // TString tableSchema = helper.GetTestTableSchema();
+                TString OptionalStorageId = "__MEMORY";
+                TString tableSchema;
+                {
+                    TStringBuilder sb;
+                    sb << R"(Columns{ Name: "timestamp" Type : "Timestamp" NotNull : true })";
+                    sb << R"(Columns{ Name: "resource_id" Type : "Utf8" DataAccessorConstructor{ ClassName: "PLAIN" } })";
+                    sb << "Columns{ Name: \"uid\" Type : \"Utf8\" NotNull : true StorageId : \"" + OptionalStorageId + "\" }";
+                    sb << R"(Columns{ Name: "level" Type : "Int32" })";
+                    sb << "Columns{ Name: \"message\" Type : \"Utf8\" StorageId : \"" + OptionalStorageId + "\" }";
+                    sb << R"(Columns{ Name: "new_column1" Type : "Uint64" })";
+                    /* if (GetWithJsonDocument()) {
+                        sb << R"(Columns{ Name: "json_payload" Type : "JsonDocument" })";
+                    } */
+                    sb << R"(
+                        KeyColumnNames: "timestamp"
+                        KeyColumnNames: "uid"
+                    )";
+                    tableSchema = sb;
+                }
+                Cerr << " " << Endl;
+                Cerr << "tableSchema=" << tableSchema << Endl;
+
                 TString tableName{"olapTable"};
                 TString storeName{"olapStore"};
                 ui32 storeShardsCount = 4;
@@ -733,14 +755,19 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
                     op.SetWorkingDir("/Root");
                     op.MutableCreateColumnStore()->CopyFrom(store);
                     // @was: helper.ExecuteModifyScheme(op);
-                    ExecuteModifyScheme(helper.Server, op);
+                    ExecuteModifyScheme(kikimr.GetTestServer(), op);
                 }
 
-
                 // Create table
-                auto origShardingColumns = helper.GetShardingColumns();
+                /* auto origShardingColumns = helper.GetShardingColumns();
                 const TString shardingColumns = "[\"" + JoinSeq("\",\"", origShardingColumns) + "\"]";
+                Cerr << "shardingColumns=" << shardingColumns << Endl;
+
                 auto shardingMethod = helper.GetShardingMethod();
+                Cerr << "shardingMethod=" << shardingMethod << Endl;
+                Cerr << " " << Endl; */
+                TString shardingColumns = "[\"timestamp\", \"uid\"]";
+                TString shardingMethod = "HASH_FUNCTION_CONSISTENCY_64";
 
                 TString tableSchemaDesc = Sprintf(R"(
                     Name: "%s"
@@ -768,13 +795,14 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
                     op.SetWorkingDir(workingDir);
                     op.MutableCreateColumnTable()->CopyFrom(table);
                     // @was: helper.ExecuteModifyScheme(op);
-                    ExecuteModifyScheme(helper.Server, op);
+                    ExecuteModifyScheme(kikimr.GetTestServer(), op);
                 }
             }
         }
 
         // Write data
         {
+            TLocalHelper helper(kikimr);
             // WriteTestData(kikimr, "/Root/olapStore/olapTable", 0, 1000000, 5);
             helper.WithSomeNulls();
 
