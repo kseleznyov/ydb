@@ -663,142 +663,19 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
         // @todo
     }
 
-    void WaitForSchemeOperation(Tests::TServer& server, TActorId sender, ui64 txId) {
-        auto& runtime = *server.GetRuntime();
-        auto& settings = server.GetSettings();
-        auto request = MakeHolder<NSchemeShard::TEvSchemeShard::TEvNotifyTxCompletion>();
-        request->Record.SetTxId(txId);
-
-        // auto tid = ChangeStateStorage(Tests::SchemeRoot, settings.Domain);
-        const ui64 mask = static_cast<ui64>(0xff) << 56;
-        ui64 tabletId = Tests::SchemeRoot;                                                 // @todo What value outside tests?
-        ui32 id = settings.Domain;                                                         // @todo What value outside tests?
-        auto tid = (tabletId & ~mask) | static_cast<ui64>(id & 0xff) << 56;
-
-        runtime.SendToPipe(tid, sender, request.Release(), 0, GetPipeConfigWithRetries()); // @todo What GetPipeConfigWithRetries() outside tests?
-        runtime.template GrabEdgeEventRethrow<NSchemeShard::TEvSchemeShard::TEvNotifyTxCompletionResult>(sender);
-    }
-
-    void ExecuteModifyScheme(Tests::TServer& server, NKikimrSchemeOp::TModifyScheme& modifyScheme) {
-        auto request = std::make_unique<TEvTxUserProxy::TEvProposeTransaction>();
-        request->Record.SetExecTimeoutPeriod(Max<ui64>());
-        *request->Record.MutableTransaction()->MutableModifyScheme() = modifyScheme;
-        TActorId sender = server.GetRuntime()->AllocateEdgeActor();
-        server.GetRuntime()->Send(new IEventHandle(MakeTxProxyID(), sender, request.release()));
-        auto ev = server.GetRuntime()->template GrabEdgeEventRethrow<TEvTxUserProxy::TEvProposeTransactionStatus>(sender);
-        auto status = ev->Get()->Record.GetStatus();
-        ui64 txId = ev->Get()->Record.GetTxId();
-        UNIT_ASSERT(status != TEvTxUserProxy::TEvProposeTransactionStatus::EStatus::ExecError);
-        WaitForSchemeOperation(server, sender, txId);
-    }
-
     Y_UNIT_TEST(WriteSingleLine) {
 
         auto settings = TKikimrSettings()
             .SetWithSampleTables(false);
         TKikimrRunner kikimr(settings);
 
-        // TLocalHelper helper(kikimr);
-        // Create table
-        {
-            // @was: helper.CreateTestOlapTable();
-            // @was: helper.CreateOlapTablesWithStore({"olapTable"}, "olapStore", 4, 3);
-            // @was: helper.CreateSchemaOlapTablesWithStore(helper.GetTestTableSchema(),{"olapTable"}, "olapStore", 4, 3);
-
-            {
-                // TString tableSchema = helper.GetTestTableSchema();
-                TString OptionalStorageId = "__MEMORY";
-                TString tableSchema;
-                {
-                    TStringBuilder sb;
-                    sb << R"(Columns{ Name: "timestamp" Type : "Timestamp" NotNull : true })";
-                    sb << R"(Columns{ Name: "resource_id" Type : "Utf8" DataAccessorConstructor{ ClassName: "PLAIN" } })";
-                    sb << "Columns{ Name: \"uid\" Type : \"Utf8\" NotNull : true StorageId : \"" + OptionalStorageId + "\" }";
-                    sb << R"(Columns{ Name: "level" Type : "Int32" })";
-                    sb << "Columns{ Name: \"message\" Type : \"Utf8\" StorageId : \"" + OptionalStorageId + "\" }";
-                    sb << R"(Columns{ Name: "new_column1" Type : "Uint64" })";
-                    /* if (GetWithJsonDocument()) {
-                        sb << R"(Columns{ Name: "json_payload" Type : "JsonDocument" })";
-                    } */
-                    sb << R"(
-                        KeyColumnNames: "timestamp"
-                        KeyColumnNames: "uid"
-                    )";
-                    tableSchema = sb;
-                }
-                Cerr << " " << Endl;
-                Cerr << "tableSchema=" << tableSchema << Endl;
-
-                TString tableName{"olapTable"};
-                TString storeName{"olapStore"};
-                ui32 storeShardsCount = 4;
-                ui32 tableShardsCount = 3;
-
-                // Create store
-                TString storeDesc = Sprintf(R"(
-                        Name: "%s"
-                        ColumnShardCount: %d
-                        SchemaPresets {
-                            Name: "default"
-                            Schema {
-                                %s
-                            }
-                        }
-                    )", storeName.c_str(), storeShardsCount, tableSchema.data());
-                // @was helper.CreateTestOlapStore(storeDesc);
-                {
-                    TString scheme = storeDesc;
-                    NKikimrSchemeOp::TColumnStoreDescription store;
-                    UNIT_ASSERT(::google::protobuf::TextFormat::ParseFromString(scheme, &store));
-                    NKikimrSchemeOp::TModifyScheme op;
-                    op.SetOperationType(NKikimrSchemeOp::EOperationType::ESchemeOpCreateColumnStore);
-                    op.SetWorkingDir("/Root");
-                    op.MutableCreateColumnStore()->CopyFrom(store);
-                    // @was: helper.ExecuteModifyScheme(op);
-                    ExecuteModifyScheme(kikimr.GetTestServer(), op);
-                }
-
-                // Create table
-                /* auto origShardingColumns = helper.GetShardingColumns();
-                const TString shardingColumns = "[\"" + JoinSeq("\",\"", origShardingColumns) + "\"]";
-                Cerr << "shardingColumns=" << shardingColumns << Endl;
-
-                auto shardingMethod = helper.GetShardingMethod();
-                Cerr << "shardingMethod=" << shardingMethod << Endl;
-                Cerr << " " << Endl; */
-                TString shardingColumns = "[\"timestamp\", \"uid\"]";
-                TString shardingMethod = "HASH_FUNCTION_CONSISTENCY_64";
-
-                TString tableSchemaDesc = Sprintf(R"(
-                    Name: "%s"
-                    ColumnShardCount: %d
-                    Sharding {
-                        HashSharding {
-                            Function: %s
-                            Columns: %s
-                        }
-                    })", tableName.c_str(), tableShardsCount, shardingMethod.data(), shardingColumns.c_str());
-
-                // @was helper.CreateTestOlapTableInternal(storeName, tableSchemaDesc);
-                {
-                    TString storeOrDirName = storeName;
-                    TString scheme = tableSchemaDesc;
-                    NKikimrSchemeOp::TColumnTableDescription table;
-                    UNIT_ASSERT(::google::protobuf::TextFormat::ParseFromString(scheme, &table));
-                    TString workingDir = "/Root";
-                    if (!storeOrDirName.empty()) {
-                        workingDir += "/" + storeOrDirName;
-                    }
-
-                    NKikimrSchemeOp::TModifyScheme op;
-                    op.SetOperationType(NKikimrSchemeOp::EOperationType::ESchemeOpCreateColumnTable);
-                    op.SetWorkingDir(workingDir);
-                    op.MutableCreateColumnTable()->CopyFrom(table);
-                    // @was: helper.ExecuteModifyScheme(op);
-                    ExecuteModifyScheme(kikimr.GetTestServer(), op);
-                }
-            }
-        }
+        TBaseDBLogWriter::TSettings writerSettings {
+            .TableName = "olapTable",
+            .StoreName = "olapStore"
+        };
+        TBaseDBLogWriter writer(kikimr, writerSettings);
+        writer.CreateStore();
+        writer.CreateTable();
 
         // Write data
         {
