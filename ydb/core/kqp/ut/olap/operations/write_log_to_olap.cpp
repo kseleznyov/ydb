@@ -21,20 +21,45 @@
 namespace NKikimr::NKqp {
 
 TString TBaseDBLogWriter::GetStoreDescription() {
+
+    TVector<std::shared_ptr<TBaseDBLogColumn>> columns = {
+        std::make_shared<TBaseDBLogColumn>("timestamp", "Timestamp", true, true, true),
+        std::make_shared<TBaseDBLogColumn>("resource_id", "Utf8", R"(DataAccessorConstructor{ ClassName: "PLAIN" })", false, false, false),
+        std::make_shared<TBaseDBLogColumn>("uid", "Utf8", "StorageId : \"" + Settings.OptionalStorageId + "\"", true, true, true),
+        std::make_shared<TBaseDBLogColumn>("level", "Int32", false, false, false),
+        std::make_shared<TBaseDBLogColumn>("message", "Utf8", "StorageId : \"" + Settings.OptionalStorageId + "\"", false, false, false),
+        std::make_shared<TBaseDBLogColumn>("new_column1", "Uint64", false, false, false),
+    };
+
     TStringBuilder sb;
-    sb << R"(Columns{ Name: "timestamp" Type : "Timestamp" NotNull : true })";
-    sb << R"(Columns{ Name: "resource_id" Type : "Utf8" DataAccessorConstructor{ ClassName: "PLAIN" } })";
-    sb << "Columns{ Name: \"uid\" Type : \"Utf8\" NotNull : true StorageId : \"" + Settings.OptionalStorageId + "\" }";
-    sb << R"(Columns{ Name: "level" Type : "Int32" })";
-    sb << "Columns{ Name: \"message\" Type : \"Utf8\" StorageId : \"" + Settings.OptionalStorageId + "\" }";
-    sb << R"(Columns{ Name: "new_column1" Type : "Uint64" })";
+    // sb << R"(Columns{ Name: "timestamp" Type : "Timestamp" NotNull : true })";
+    // sb << R"(Columns{ Name: "resource_id" Type : "Utf8" DataAccessorConstructor{ ClassName: "PLAIN" } })";
+    // sb << "Columns{ Name: \"uid\" Type : \"Utf8\" NotNull : true StorageId : \"" + Settings.OptionalStorageId + "\" }";
+    // sb << R"(Columns{ Name: "level" Type : "Int32" })";
+    // sb << "Columns{ Name: \"message\" Type : \"Utf8\" StorageId : \"" + Settings.OptionalStorageId + "\" }";
+    // sb << R"(Columns{ Name: "new_column1" Type : "Uint64" })";
+    for (const auto& column : columns) {
+        sb << "Columns{ Name: \"" << column->Name << "\" Type : \"" << column->Type << "\"";
+        if (column->NotNull) {
+            sb << " NotNull : true";
+        }
+        if (!column->Extra.empty()) {
+            sb << " " << column->Extra;
+        }
+        sb << " }";
+    }
     /* if (GetWithJsonDocument()) {
         sb << R"(Columns{ Name: "json_payload" Type : "JsonDocument" })";
     } */
-    sb << R"(
-        KeyColumnNames: "timestamp"
-        KeyColumnNames: "uid"
-    )";
+    // sb << R"(
+    //     KeyColumnNames: "timestamp"
+    //     KeyColumnNames: "uid"
+    // )";
+    for (const auto& column : columns) {
+        if (column->IsPK) {
+            sb << "KeyColumnNames: \"" << column->Name << "\"\n";
+        }
+    }
 
     TString storeDesc = Sprintf(R"(
         Name: "%s"
@@ -52,7 +77,6 @@ TString TBaseDBLogWriter::GetStoreDescription() {
 TString TBaseDBLogWriter::GetTableDescription() {
     // @todo Как правильно назвать?
     TString shardingColumns = "[\"timestamp\", \"uid\"]";
-    // TString shardingMethod = "HASH_FUNCTION_CONSISTENCY_64";
 
     TString result = Sprintf(R"(
         Name: "%s"
@@ -64,7 +88,7 @@ TString TBaseDBLogWriter::GetTableDescription() {
             }
         })", Settings.TableName.c_str(),
         Settings.TableShardsCount,
-        Settings.ShardingMethod.data(),
+        Settings.ShardingMethod.c_str(),
         shardingColumns.c_str());
     return result;
 }

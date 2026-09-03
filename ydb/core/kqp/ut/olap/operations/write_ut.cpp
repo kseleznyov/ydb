@@ -673,7 +673,7 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
             .TableName = "olapTable",
             .StoreName = "olapStore"
         };
-        TBaseDBLogWriter writer(kikimr, writerSettings);
+        TBaseDBLogWriter writer(kikimr, writerSettings, {});
         writer.CreateStore();
         writer.CreateTable();
 
