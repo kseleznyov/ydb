@@ -1,6 +1,9 @@
 #pragma once
+#include "write_log_column.h"
+
 #include <ydb/core/kqp/ut/common/kqp_ut_common.h>
 #include <ydb/core/protos/flat_scheme_op.pb.h>
+#include <ydb/library/actors/struct_log/log_sink.h>
 
 #include <contrib/libs/apache/arrow/cpp/src/arrow/buffer.h>
 #include <contrib/libs/apache/arrow/cpp/src/arrow/array/builder_binary.h>
@@ -11,32 +14,7 @@
 
 namespace NKikimr::NKqp::NLogToDB {
 
-class TBaseDBLogColumn {
-public:
-    TBaseDBLogColumn(TString name, TString type, TString extra = {}, bool isPK = false, bool notNull = false, bool isShardingKey = false)
-        : Name(std::move(name))
-        , Type(std::move(type))
-        , Extra(std::move(extra))
-        , IsPK(isPK)
-        , NotNull(notNull)
-        , IsShardingKey(isShardingKey) {}
-
-    TBaseDBLogColumn(TString name, TString type, bool isPK = false, bool notNull = false, bool isShardingKey = false)
-        : Name(std::move(name))
-        , Type(std::move(type))
-        , IsPK(isPK)
-        , NotNull(notNull)
-        , IsShardingKey(isShardingKey) {}
-
-    const TString Name;
-    const TString Type;
-    const TString Extra;
-    const bool IsPK;
-    const bool NotNull;
-    const bool IsShardingKey;
-};
-
-class TBaseDBLogWriter{
+class TBaseDBLogWriter : public NActors::NStructuredLog::ILogSink {
 public:
 
     struct TSettings {
@@ -57,8 +35,10 @@ public:
     {
     }
 
+    void Write(const NActors::NStructuredLog::TLogMessage&) override;
     TString GetStoreDescription();
     TString GetTableDescription();
+    std::shared_ptr<arrow::Schema> GetArrowSchema() const;
 
     TKikimrRunner& Runner;
     const TSettings Settings;

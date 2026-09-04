@@ -688,66 +688,28 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
         Cerr << result << Endl;
     }
 
-    std::shared_ptr<arrow::Schema> GetArrowSchema() {
-        std::vector<std::shared_ptr<arrow::Field>> fields;
-        fields.emplace_back(arrow::field("timestamp", arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO), false));
-        fields.emplace_back(arrow::field("resource_id", arrow::utf8()));
-        fields.emplace_back(arrow::field("uid", arrow::utf8(), false));
-        fields.emplace_back(arrow::field("level", arrow::int32()));
-        fields.emplace_back(arrow::field("message", arrow::utf8()));
-        fields.emplace_back(arrow::field("new_column1", arrow::uint64()));
-        return std::make_shared<arrow::Schema>(std::move(fields));
-    }
-
-    std::shared_ptr<arrow::RecordBatch> TestArrowBatch(ui64 pathIdBegin, ui64 tsBegin, size_t rowCount, const ui64 tsStepUs)
-    {
-        std::shared_ptr<arrow::Schema> schema = GetArrowSchema();
-
-        arrow::TimestampBuilder b1(arrow::timestamp(arrow::TimeUnit::TimeUnit::MICRO), arrow::default_memory_pool());
-        arrow::StringBuilder b2;
-        arrow::StringBuilder b3;
-        arrow::Int32Builder b4;
-        arrow::StringBuilder b5;
-        arrow::UInt64Builder b7;
-
-        bool withSomeNulls = true;
-        size_t index = 1ULL;
-        const auto magic = withSomeNulls ? 3ULL : 0ULL;
-        for (size_t i = 0; i < rowCount; ++i) {
-            std::string uid("uid_" + std::to_string(tsBegin + i));
-            std::string message("some prefix " + std::string(1024 + i % 200, 'x'));
-            Y_ABORT_UNLESS(b1.Append(tsBegin + i * tsStepUs).ok());
-            Y_ABORT_UNLESS(b2.Append(std::to_string(pathIdBegin + i)).ok());
-            Y_ABORT_UNLESS(b3.Append(uid).ok());
-
-            if (magic && !(++index % magic))
-                Y_ABORT_UNLESS(b4.AppendNull().ok());
-            else
-                Y_ABORT_UNLESS(b4.Append(i % 5).ok());
-
-            if (magic && !(++index % magic))
-                Y_ABORT_UNLESS(b5.AppendNull().ok());
-            else
-                Y_ABORT_UNLESS(b5.Append(message).ok());
-
-            Y_ABORT_UNLESS(b7.Append(i * 1000).ok());
+    void CheckQueryResult(TKikimrRunner& kikimr, const TBaseDBLogWriter& writer, const TString& ysonResult) {
+        TStringBuilder selectList;
+        TStringBuilder orderBy;
+        for (const auto& column : writer.Columns) {
+            if (!selectList.empty()) {
+                selectList << ", ";
+            }
+            selectList << "`" << column->Name << "`";
+            if (column->Settings.IsPK) {
+                if (!orderBy.empty()) {
+                    orderBy << ", ";
+                }
+                orderBy << "`" << column->Name << "`";
+            }
         }
 
-        std::shared_ptr<arrow::TimestampArray> a1;
-        std::shared_ptr<arrow::StringArray> a2;
-        std::shared_ptr<arrow::StringArray> a3;
-        std::shared_ptr<arrow::Int32Array> a4;
-        std::shared_ptr<arrow::StringArray> a5;
-        std::shared_ptr<arrow::UInt64Array> a7;
-
-        Y_ABORT_UNLESS(b1.Finish(&a1).ok());
-        Y_ABORT_UNLESS(b2.Finish(&a2).ok());
-        Y_ABORT_UNLESS(b3.Finish(&a3).ok());
-        Y_ABORT_UNLESS(b4.Finish(&a4).ok());
-        Y_ABORT_UNLESS(b5.Finish(&a5).ok());
-        Y_ABORT_UNLESS(b7.Finish(&a7).ok());
-
-        return arrow::RecordBatch::Make(schema, rowCount, { a1, a2, a3, a4, a5, a7 });
+        TStringBuilder query;
+        query << "SELECT " << selectList << " FROM `/Root/" << writer.Settings.StoreName << "/" << writer.Settings.TableName << "`";
+        if (!orderBy.empty()) {
+            query << " ORDER BY " << orderBy;
+        }
+        CheckQueryResult(kikimr, TString(query), ysonResult);
     }
 
     Y_UNIT_TEST(WriteSingleLine) {
@@ -761,23 +723,20 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
             .StoreName = "olapStore"
         };
 
-        // sb << R"(Columns{ Name: "timestamp" Type : "Timestamp" NotNull : true })";
-        // sb << R"(Columns{ Name: "resource_id" Type : "Utf8" DataAccessorConstructor{ ClassName: "PLAIN" } })";
-        // sb << "Columns{ Name: \"uid\" Type : \"Utf8\" NotNull : true StorageId : \"" + Settings.OptionalStorageId + "\" }";
-        // sb << R"(Columns{ Name: "level" Type : "Int32" })";
-        // sb << "Columns{ Name: \"message\" Type : \"Utf8\" StorageId : \"" + Settings.OptionalStorageId + "\" }";
-        // sb << R"(Columns{ Name: "new_column1" Type : "Uint64" })";
-        /* if (GetWithJsonDocument()) {
-            sb << R"(Columns{ Name: "json_payload" Type : "JsonDocument" })";
-        } */
-
         TVector<std::shared_ptr<TBaseDBLogColumn>> columns = {
-            std::make_shared<TBaseDBLogColumn>("timestamp", "Timestamp", true, true, true),
-            std::make_shared<TBaseDBLogColumn>("resource_id", "Utf8", R"(DataAccessorConstructor{ ClassName: "PLAIN" })", false, false, false),
-            std::make_shared<TBaseDBLogColumn>("uid", "Utf8", "StorageId : \"" + writerSettings.OptionalStorageId + "\"", true, true, true),
-            std::make_shared<TBaseDBLogColumn>("level", "Int32", false, false, false),
-            std::make_shared<TBaseDBLogColumn>("message", "Utf8", "StorageId : \"" + writerSettings.OptionalStorageId + "\"", false, false, false),
-            std::make_shared<TBaseDBLogColumn>("new_column1", "Uint64", false, false, false),
+            std::make_shared<TInstantDBLogColumn>("timestamp",
+                TBaseDBLogColumn::TSettings{.IsPK = true, .NotNull = true, .IsShardingKey = true}),
+            /* std::make_shared<TStringDBLogColumn>("resource_id",
+                TBaseDBLogColumn::TSettings{.Extra = R"(DataAccessorConstructor{ ClassName: "PLAIN" })"}), */
+            std::make_shared<TStringDBLogColumn>("uid", TBaseDBLogColumn::TSettings{
+                .Extra = "StorageId : \"" + writerSettings.OptionalStorageId + "\"",
+                .IsPK = true,
+                .NotNull = true,
+                .IsShardingKey = true}),
+            // std::make_shared<TInt32DBLogColumn>("level", TBaseDBLogColumn::TSettings()),
+            /* std::make_shared<TStringDBLogColumn>("message",
+                TBaseDBLogColumn::TSettings{.Extra = "StorageId : \"" + writerSettings.OptionalStorageId + "\""}),*/
+            // std::make_shared<TUint64DBLogColumn>("new_column1", TBaseDBLogColumn::TSettings()),
         };
 
         // Create database table
@@ -786,14 +745,13 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
         writer.CreateTable();
 
         // Write data
-        auto batch = TestArrowBatch(0, 1000, 5, 1);
-        writer.SendDataViaActorSystem(batch);
-
+        NActors::NStructuredLog::TLogMessage message;
+        writer.Write(message);
+        
         // Fetch and check data
-        CheckQueryResult(kikimr,
-            "SELECT `timestamp`, `resource_id` FROM `/Root/olapStore/olapTable` ORDER BY `timestamp`",
-            "");
+        CheckQueryResult(kikimr, writer, "");
     }
 }
 
 }   // namespace NKikimr::NKqp
+

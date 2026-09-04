@@ -3,6 +3,8 @@
 #include <ydb/core/formats/arrow/arrow_helpers.h>
 #include <ydb/core/grpc_services/local_rpc/local_rpc.h>
 
+#include <contrib/libs/apache/arrow/cpp/src/arrow/type.h>
+
 #include <ydb/core/kqp/ut/olap/combinatory/variator.h>
 #include <ydb/core/kqp/ut/olap/helpers/get_value.h>
 #include <ydb/core/kqp/ut/olap/helpers/local.h>
@@ -23,22 +25,32 @@
 
 namespace NKikimr::NKqp::NLogToDB {
 
+void TBaseDBLogWriter::Write(const NActors::NStructuredLog::TLogMessage&) {
+    std::vector<std::shared_ptr<arrow::Array>> arrays;
+    for(auto& column: Columns) {
+        column->AddDummyValue();
+        arrays.push_back(column->MakeArray());
+    }
+    auto batch = arrow::RecordBatch::Make(GetArrowSchema(), 1, arrays);
+    SendDataViaActorSystem(batch);
+}
+
 TString TBaseDBLogWriter::GetStoreDescription() {
 
     TStringBuilder sb;
     for (const auto& column : Columns) {
         sb << "Columns{ Name: \"" << column->Name << "\" Type : \"" << column->Type << "\"";
-        if (column->NotNull) {
+        if (column->Settings.NotNull) {
             sb << " NotNull : true";
         }
-        if (!column->Extra.empty()) {
-            sb << " " << column->Extra;
+        if (!column->Settings.Extra.empty()) {
+            sb << " " << column->Settings.Extra;
         }
         sb << " }";
     }
 
     for (const auto& column : Columns) {
-        if (column->IsPK) {
+        if (column->Settings.IsPK) {
             sb << "KeyColumnNames: \"" << column->Name << "\"\n";
         }
     }
@@ -54,6 +66,15 @@ TString TBaseDBLogWriter::GetStoreDescription() {
             }
         )", Settings.StoreName.c_str(), Settings.StoreShardsCount, sb.data());
     return storeDesc;
+}
+
+std::shared_ptr<arrow::Schema> TBaseDBLogWriter::GetArrowSchema() const {
+    std::vector<std::shared_ptr<arrow::Field>> fields;
+    fields.reserve(Columns.size());
+    for (const auto& column : Columns) {
+        fields.emplace_back(column->MakeArrowField());
+    }
+    return std::make_shared<arrow::Schema>(std::move(fields));
 }
 
 TString TBaseDBLogWriter::GetTableDescription() {
