@@ -1,5 +1,8 @@
 #include "write_log_to_olap.h"
 
+#include <ydb/core/formats/arrow/arrow_helpers.h>
+#include <ydb/core/grpc_services/local_rpc/local_rpc.h>
+
 #include <ydb/core/kqp/ut/olap/combinatory/variator.h>
 #include <ydb/core/kqp/ut/olap/helpers/get_value.h>
 #include <ydb/core/kqp/ut/olap/helpers/local.h>
@@ -33,7 +36,7 @@ TString TBaseDBLogWriter::GetStoreDescription() {
         }
         sb << " }";
     }
-        
+
     for (const auto& column : Columns) {
         if (column->IsPK) {
             sb << "KeyColumnNames: \"" << column->Name << "\"\n";
@@ -130,6 +133,47 @@ void TBaseDBLogWriter::CreateTable() {
     op.MutableCreateColumnTable()->CopyFrom(table);
     // @was: helper.ExecuteModifyScheme(op);
     ExecuteModifyScheme(op);
+}
+
+void TBaseDBLogWriter::SendDataViaActorSystem(std::shared_ptr<arrow::RecordBatch> batch) {
+
+    auto* runtime = Runner.GetTestServer().GetRuntime();
+
+    UNIT_ASSERT(batch);
+    UNIT_ASSERT(batch->num_rows());
+    auto data = NKikimr::NArrow::SerializeBatchNoCompression(batch);
+    UNIT_ASSERT(!data.empty());
+    TString serializedSchema = NKikimr::NArrow::SerializeSchema(*batch->schema());
+    UNIT_ASSERT(serializedSchema);
+
+    Ydb::Table::BulkUpsertRequest request;
+    request.mutable_arrow_batch_settings()->set_schema(serializedSchema);
+    request.set_data(data);
+    request.set_table("/Root/olapStore/olapTable");
+
+    std::atomic<size_t> responses = 0;
+    using TEvBulkUpsertRequest = NGRpcService::TGrpcRequestOperationCall<Ydb::Table::BulkUpsertRequest, Ydb::Table::BulkUpsertResponse>;
+    auto future = NRpcService::DoLocalRpc<TEvBulkUpsertRequest>(std::move(request), "", "", runtime->GetActorSystem(0));
+    future.Subscribe([&](const NThreading::TFuture<Ydb::Table::BulkUpsertResponse> f) {
+        auto op = f.GetValueSync().operation();
+        TStringBuilder issues;
+        if (op.status() != Ydb::StatusIds::SUCCESS) {
+            for (auto& issue : op.issues()) {
+                issues << issue.message() << " ";
+            }
+            issues << "\n";
+        }
+        Cerr << issues;
+        UNIT_ASSERT_VALUES_EQUAL(op.status(), Ydb::StatusIds::SUCCESS);
+        responses.fetch_add(1);
+    });
+
+    TDispatchOptions options;
+    options.CustomFinalCondition = [&]() {
+        return responses.load() >= 1;
+    };
+
+    runtime->DispatchEvents(options);
 }
 
 }

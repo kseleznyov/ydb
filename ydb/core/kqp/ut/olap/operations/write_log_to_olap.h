@@ -2,6 +2,11 @@
 #include <ydb/core/kqp/ut/common/kqp_ut_common.h>
 #include <ydb/core/protos/flat_scheme_op.pb.h>
 
+#include <contrib/libs/apache/arrow/cpp/src/arrow/buffer.h>
+#include <contrib/libs/apache/arrow/cpp/src/arrow/array/builder_binary.h>
+#include <contrib/libs/apache/arrow/cpp/src/arrow/array/builder_primitive.h>
+#include <contrib/libs/apache/arrow/cpp/src/arrow/type_fwd.h>
+
 #include <memory>
 
 namespace NKikimr::NKqp::NLogToDB {
@@ -63,6 +68,7 @@ public:
     void ExecuteModifyScheme(NKikimrSchemeOp::TModifyScheme& modifyScheme);
     void CreateStore();
     void CreateTable();
+    void SendDataViaActorSystem(std::shared_ptr<arrow::RecordBatch> batch);
 
 };
 
