@@ -1,9 +1,10 @@
 #pragma once
 #include <ydb/core/kqp/ut/common/kqp_ut_common.h>
+#include <ydb/core/protos/flat_scheme_op.pb.h>
 
 #include <memory>
 
-namespace NKikimr::NKqp {
+namespace NKikimr::NKqp::NLogToDB {
 
 class TBaseDBLogColumn {
 public:
@@ -40,7 +41,8 @@ public:
         ui32 StoreShardsCount = 4;
         ui32 TableShardsCount = 3;
 
-        TString ShardingMethod = "HASH_FUNCTION_CONSISTENCY_64";
+        NKikimrSchemeOp::TColumnTableSharding::THashSharding::EHashFunction ShardingMethod =
+            NKikimrSchemeOp::TColumnTableSharding::THashSharding::HASH_FUNCTION_CONSISTENCY_64;
     };
 
     TBaseDBLogWriter(TKikimrRunner& runner, const TSettings& settings, TVector<std::shared_ptr<TBaseDBLogColumn>> columns)

@@ -20,6 +20,8 @@
 
 namespace NKikimr::NKqp {
 
+using namespace NKikimr::NKqp::NLogToDB;
+
 Y_UNIT_TEST_SUITE(KqpOlapWrite) {
     Y_UNIT_TEST(WriteFails) {
         auto csController = NKikimr::NYDBTest::TControllers::RegisterCSControllerGuard<NKikimr::NOlap::TWaitCompactionController>();
@@ -673,7 +675,27 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
             .TableName = "olapTable",
             .StoreName = "olapStore"
         };
-        TBaseDBLogWriter writer(kikimr, writerSettings, {});
+
+        // sb << R"(Columns{ Name: "timestamp" Type : "Timestamp" NotNull : true })";
+        // sb << R"(Columns{ Name: "resource_id" Type : "Utf8" DataAccessorConstructor{ ClassName: "PLAIN" } })";
+        // sb << "Columns{ Name: \"uid\" Type : \"Utf8\" NotNull : true StorageId : \"" + Settings.OptionalStorageId + "\" }";
+        // sb << R"(Columns{ Name: "level" Type : "Int32" })";
+        // sb << "Columns{ Name: \"message\" Type : \"Utf8\" StorageId : \"" + Settings.OptionalStorageId + "\" }";
+        // sb << R"(Columns{ Name: "new_column1" Type : "Uint64" })";
+        /* if (GetWithJsonDocument()) {
+            sb << R"(Columns{ Name: "json_payload" Type : "JsonDocument" })";
+        } */
+
+        TVector<std::shared_ptr<TBaseDBLogColumn>> columns = {
+            std::make_shared<TBaseDBLogColumn>("timestamp", "Timestamp", true, true, true),
+            std::make_shared<TBaseDBLogColumn>("resource_id", "Utf8", R"(DataAccessorConstructor{ ClassName: "PLAIN" })", false, false, false),
+            std::make_shared<TBaseDBLogColumn>("uid", "Utf8", "StorageId : \"" + writerSettings.OptionalStorageId + "\"", true, true, true),
+            std::make_shared<TBaseDBLogColumn>("level", "Int32", false, false, false),
+            std::make_shared<TBaseDBLogColumn>("message", "Utf8", "StorageId : \"" + writerSettings.OptionalStorageId + "\"", false, false, false),
+            std::make_shared<TBaseDBLogColumn>("new_column1", "Uint64", false, false, false),
+        };
+
+        TBaseDBLogWriter writer(kikimr, writerSettings, columns);
         writer.CreateStore();
         writer.CreateTable();
 

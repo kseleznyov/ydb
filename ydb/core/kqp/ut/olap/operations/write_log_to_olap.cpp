@@ -18,27 +18,12 @@
 
 #include <library/cpp/testing/unittest/registar.h>
 
-namespace NKikimr::NKqp {
+namespace NKikimr::NKqp::NLogToDB {
 
 TString TBaseDBLogWriter::GetStoreDescription() {
 
-    TVector<std::shared_ptr<TBaseDBLogColumn>> columns = {
-        std::make_shared<TBaseDBLogColumn>("timestamp", "Timestamp", true, true, true),
-        std::make_shared<TBaseDBLogColumn>("resource_id", "Utf8", R"(DataAccessorConstructor{ ClassName: "PLAIN" })", false, false, false),
-        std::make_shared<TBaseDBLogColumn>("uid", "Utf8", "StorageId : \"" + Settings.OptionalStorageId + "\"", true, true, true),
-        std::make_shared<TBaseDBLogColumn>("level", "Int32", false, false, false),
-        std::make_shared<TBaseDBLogColumn>("message", "Utf8", "StorageId : \"" + Settings.OptionalStorageId + "\"", false, false, false),
-        std::make_shared<TBaseDBLogColumn>("new_column1", "Uint64", false, false, false),
-    };
-
     TStringBuilder sb;
-    // sb << R"(Columns{ Name: "timestamp" Type : "Timestamp" NotNull : true })";
-    // sb << R"(Columns{ Name: "resource_id" Type : "Utf8" DataAccessorConstructor{ ClassName: "PLAIN" } })";
-    // sb << "Columns{ Name: \"uid\" Type : \"Utf8\" NotNull : true StorageId : \"" + Settings.OptionalStorageId + "\" }";
-    // sb << R"(Columns{ Name: "level" Type : "Int32" })";
-    // sb << "Columns{ Name: \"message\" Type : \"Utf8\" StorageId : \"" + Settings.OptionalStorageId + "\" }";
-    // sb << R"(Columns{ Name: "new_column1" Type : "Uint64" })";
-    for (const auto& column : columns) {
+    for (const auto& column : Columns) {
         sb << "Columns{ Name: \"" << column->Name << "\" Type : \"" << column->Type << "\"";
         if (column->NotNull) {
             sb << " NotNull : true";
@@ -48,14 +33,8 @@ TString TBaseDBLogWriter::GetStoreDescription() {
         }
         sb << " }";
     }
-    /* if (GetWithJsonDocument()) {
-        sb << R"(Columns{ Name: "json_payload" Type : "JsonDocument" })";
-    } */
-    // sb << R"(
-    //     KeyColumnNames: "timestamp"
-    //     KeyColumnNames: "uid"
-    // )";
-    for (const auto& column : columns) {
+        
+    for (const auto& column : Columns) {
         if (column->IsPK) {
             sb << "KeyColumnNames: \"" << column->Name << "\"\n";
         }
@@ -88,7 +67,7 @@ TString TBaseDBLogWriter::GetTableDescription() {
             }
         })", Settings.TableName.c_str(),
         Settings.TableShardsCount,
-        Settings.ShardingMethod.c_str(),
+        NKikimrSchemeOp::TColumnTableSharding::THashSharding::EHashFunction_Name(Settings.ShardingMethod).c_str(),
         shardingColumns.c_str());
     return result;
 }
