@@ -112,8 +112,8 @@ namespace {
         {
             Runtime.Initialize();
             LogBackend.reset(new TMockBackend{ThrowAlways});
+            settings->LogSinkProvider = [sink]() { TSettings::TLogSinkVector result; result.push_back(sink); return result; };
             auto logger = new TLoggerActor{settings, LogBackend, Counters};
-            logger->AddSink(sink);
             LoggerActor = Runtime.Register(logger);
             Runtime.SetScheduledEventFilter([] (auto&&, auto&&, auto&&, auto) {
                 return false;

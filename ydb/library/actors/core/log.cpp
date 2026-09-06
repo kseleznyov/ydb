@@ -100,6 +100,7 @@ namespace {
 }
 
 namespace NActors {
+
     TLoggerActor::TLoggerActor(TIntrusivePtr<NLog::TSettings> settings,
                                TAutoPtr<TLogBackend> logBackend,
                                TIntrusivePtr<NMonitoring::TDynamicCounters> counters)
@@ -110,6 +111,10 @@ namespace NActors {
         , LogBuffer(*Metrics, *Settings)
         , StructuredJsonWriter(ReservedJsonKeyNames)
     {
+        if (settings->LogSinkProvider) {
+            auto sinks = settings->LogSinkProvider();
+            std::copy( begin(sinks), end(sinks), std::back_inserter(Sinks) );
+        }
     }
 
     TLoggerActor::TLoggerActor(TIntrusivePtr<NLog::TSettings> settings,
@@ -177,10 +182,6 @@ namespace NActors {
         // throttling via Sleep was removed since it causes unexpected
         // incidents when users try to set AllowDrop=false.
         Y_UNUSED(settings);
-    }
-
-    void TLoggerActor::AddSink(NStructuredLog::ILogSinkSPtr sink) {
-        Sinks.push_back(sink);
     }
 
     void TLoggerActor::FlushLogBufferMessage() {
@@ -542,6 +543,11 @@ namespace NActors {
     constexpr size_t TimeBufSize = 512;
 
     bool TLoggerActor::OutputRecord(NLog::TEvLog *evLog) noexcept {
+        // @todo Более умное создание синков
+        if (Sinks.empty() && Settings->LogSinkProvider) {
+            Sinks = Settings->LogSinkProvider();
+        }
+
         if (!Sinks.empty()) {
             NStructuredLog::TLogMessage message {
                 .Time = evLog->Stamp,

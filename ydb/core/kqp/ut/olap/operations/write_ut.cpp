@@ -10,6 +10,7 @@
 #include <ydb/core/kqp/ut/olap/operations/write_log_to_olap.h>
 
 #include <ydb/core/base/tablet_pipecache.h>
+#include <ydb/library/actors/core/log.h>
 #include <ydb/core/protos/schemeshard/operations.pb.h>
 #include <ydb/core/tx/columnshard/hooks/testing/controller.h>
 #include <ydb/core/tx/columnshard/test_helper/controllers.h>
@@ -648,6 +649,21 @@ Y_UNIT_TEST_SUITE(KqpOlapWrite) {
     }
 }
 
+class TExampleLogWriter : public TBaseDBLogWriter {
+public:
+    TExampleLogWriter(std::shared_ptr<TKikimrRunner>& runner)
+        : TBaseDBLogWriter(runner, NActorsServices::TEST, TBaseDBLogWriter::TDatabaseSettings {
+            .TableName = "olapTable",
+            .StoreName = "olapStore"
+        }, {
+            std::make_shared<TDBLogMessageTimeColumn>(),
+            std::make_shared<TDBLogMessagePrioColumn>(),
+            std::make_shared<TDBLogMessageTextColumn>(),
+            std::make_shared<TDBLogMessageLocationColumn>()
+        })
+    {}
+};
+
 Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
     Y_UNIT_TEST(CreateTable) {
         // @todo
@@ -712,44 +728,48 @@ Y_UNIT_TEST_SUITE(KqpOlapWriteLog) {
         CheckQueryResult(kikimr, TString(query), ysonResult);
     }
 
+    // @todo Написать тесты для всех типов
+
     Y_UNIT_TEST(WriteSingleLine) {
 
+        std::shared_ptr<TKikimrRunner> kikimr;
+        std::shared_ptr<TExampleLogWriter> writer;
         auto settings = TKikimrSettings()
-            .SetWithSampleTables(false);
-        TKikimrRunner kikimr(settings);
+            .SetWithSampleTables(false)
+            /*.SetLogSinkProvider([&]() {
+                if (!writer) {
+                    writer = std::make_shared<TExampleLogWriter>(kikimr);
+                }
+                return NActors::NLog::TSettings::TLogSinkVector{writer};
+            })*/;
+        kikimr = std::make_shared<TKikimrRunner>(settings);
+        writer = std::make_shared<TExampleLogWriter>(kikimr);
 
-        TBaseDBLogWriter::TSettings writerSettings {
-            .TableName = "olapTable",
-            .StoreName = "olapStore"
-        };
+        UNIT_ASSERT(writer != nullptr);
 
-        TVector<std::shared_ptr<TBaseDBLogColumn>> columns = {
-            std::make_shared<TInstantDBLogColumn>("timestamp",
-                TBaseDBLogColumn::TSettings{.IsPK = true, .NotNull = true, .IsShardingKey = true}),
-            /* std::make_shared<TStringDBLogColumn>("resource_id",
-                TBaseDBLogColumn::TSettings{.Extra = R"(DataAccessorConstructor{ ClassName: "PLAIN" })"}), */
-            std::make_shared<TStringDBLogColumn>("uid", TBaseDBLogColumn::TSettings{
-                .Extra = "StorageId : \"" + writerSettings.OptionalStorageId + "\"",
-                .IsPK = true,
-                .NotNull = true,
-                .IsShardingKey = true}),
-            // std::make_shared<TInt32DBLogColumn>("level", TBaseDBLogColumn::TSettings()),
-            /* std::make_shared<TStringDBLogColumn>("message",
-                TBaseDBLogColumn::TSettings{.Extra = "StorageId : \"" + writerSettings.OptionalStorageId + "\""}),*/
-            // std::make_shared<TUint64DBLogColumn>("new_column1", TBaseDBLogColumn::TSettings()),
-        };
-
-        // Create database table
-        TBaseDBLogWriter writer(kikimr, writerSettings, columns);
-        writer.CreateStore();
-        writer.CreateTable();
+        writer->CreateStore();
+        writer->CreateTable();
+        writer->TableExists = true;
+        // YDB_LOG_ERROR_COMP(writer->Component, "Test message via logger actor");
 
         // Write data
         NActors::NStructuredLog::TLogMessage message;
-        writer.Write(message);
-        
+        message.Component = NActorsServices::TEST;
+
+        message.Time = TInstant::MicroSeconds(0);
+        message.Priority = NLog::EPrio::Alert;
+        message.TextMessage = "Alert message";
+        message.FileName = "filename1";
+        message.LineNumber = 1001;
+        writer->Write(message);
+
         // Fetch and check data
-        CheckQueryResult(kikimr, writer, "");
+        /* for(unsigned i=0; writer->Written != 1 && i < 30; i++) {
+            Cerr << "DEBUG: Wait write "<< i << "..." << Endl;
+            Sleep(TDuration::Seconds(1));
+        } */
+
+        CheckQueryResult(*kikimr, *writer, "");
     }
 }
 

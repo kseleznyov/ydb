@@ -17,7 +17,7 @@ namespace NKikimr::NKqp::NLogToDB {
 class TBaseDBLogWriter : public NActors::NStructuredLog::ILogSink {
 public:
 
-    struct TSettings {
+    struct TDatabaseSettings {
         TString OptionalStorageId = "__MEMORY";
         TString TableName{"olapTable"};
         TString StoreName{"olapStore"};
@@ -28,11 +28,17 @@ public:
             NKikimrSchemeOp::TColumnTableSharding::THashSharding::HASH_FUNCTION_CONSISTENCY_64;
     };
 
-    TBaseDBLogWriter(TKikimrRunner& runner, const TSettings& settings, TVector<std::shared_ptr<TBaseDBLogColumn>> columns)
+    TBaseDBLogWriter(std::shared_ptr<TKikimrRunner>& runner, NLog::EComponent component, const TDatabaseSettings& settings, TVector<std::shared_ptr<TBaseDBLogColumn>> columns)
         : Runner(runner)
+        , Component(component)
         , Settings(settings)
         , Columns(std::move(columns))
     {
+    }
+
+    TKikimrRunner& GetRunner() const {
+        Y_ABORT_UNLESS(Runner, "TKikimrRunner is not constructed yet");
+        return *Runner;
     }
 
     void Write(const NActors::NStructuredLog::TLogMessage&) override;
@@ -40,9 +46,12 @@ public:
     TString GetTableDescription();
     std::shared_ptr<arrow::Schema> GetArrowSchema() const;
 
-    TKikimrRunner& Runner;
-    const TSettings Settings;
+    std::shared_ptr<TKikimrRunner> Runner;
+    const NLog::EComponent Component;
+    const TDatabaseSettings Settings;
     const TVector<std::shared_ptr<TBaseDBLogColumn>> Columns;
+    bool TableExists {false};
+    unsigned Written{0};
 
     void WaitForSchemeOperation(TActorId sender, ui64 txId);
     void ExecuteModifyScheme(NKikimrSchemeOp::TModifyScheme& modifyScheme);

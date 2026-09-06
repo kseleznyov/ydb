@@ -11,11 +11,11 @@ namespace NActors::NStructuredLog {
 
 struct TLogMessage {
     TInstant Time;
-    NLog::EPrio Priority;
-    NLog::EComponent Component;
-    const char* FileName;
-    ui64 LineNumber;
-    const TString TextMessage;
+    NLog::EPrio Priority {NLog::EPrio::Emerg};
+    NLog::EComponent Component {0};
+    const char* FileName {nullptr};
+    ui64 LineNumber {0};
+    TString TextMessage;
     TStructuredMessage StructuredMessage;
 };
 

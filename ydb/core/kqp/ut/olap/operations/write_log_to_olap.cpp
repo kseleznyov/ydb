@@ -25,14 +25,23 @@
 
 namespace NKikimr::NKqp::NLogToDB {
 
-void TBaseDBLogWriter::Write(const NActors::NStructuredLog::TLogMessage&) {
+void TBaseDBLogWriter::Write(const NActors::NStructuredLog::TLogMessage& message) {
+    if (message.Component != Component) {
+        return ;
+    }
+
+    if (!TableExists) {
+        return ;
+    }
+
     std::vector<std::shared_ptr<arrow::Array>> arrays;
     for(auto& column: Columns) {
-        column->AddDummyValue();
+        column->Write(message);
         arrays.push_back(column->MakeArray());
     }
     auto batch = arrow::RecordBatch::Make(GetArrowSchema(), 1, arrays);
     SendDataViaActorSystem(batch);
+    Written++;
 }
 
 TString TBaseDBLogWriter::GetStoreDescription() {
@@ -40,7 +49,7 @@ TString TBaseDBLogWriter::GetStoreDescription() {
     TStringBuilder sb;
     for (const auto& column : Columns) {
         sb << "Columns{ Name: \"" << column->Name << "\" Type : \"" << column->Type << "\"";
-        if (column->Settings.NotNull) {
+        if (column->Settings.IsNotNull) {
             sb << " NotNull : true";
         }
         if (!column->Settings.Extra.empty()) {
@@ -78,8 +87,20 @@ std::shared_ptr<arrow::Schema> TBaseDBLogWriter::GetArrowSchema() const {
 }
 
 TString TBaseDBLogWriter::GetTableDescription() {
-    // @todo Как правильно назвать?
-    TString shardingColumns = "[\"timestamp\", \"uid\"]";
+    TStringBuilder sb;
+    sb << "[";
+    bool first = true;
+    for (const auto& column : Columns) {
+        if (column->Settings.IsShardingKey) {
+            if (!first) {
+                sb << ", ";
+            } else {
+                first = false;
+            }
+            sb << "\"" << column->Name << "\"\n";
+        }
+    }
+    sb << "]";
 
     TString result = Sprintf(R"(
         Name: "%s"
@@ -92,12 +113,12 @@ TString TBaseDBLogWriter::GetTableDescription() {
         })", Settings.TableName.c_str(),
         Settings.TableShardsCount,
         NKikimrSchemeOp::TColumnTableSharding::THashSharding::EHashFunction_Name(Settings.ShardingMethod).c_str(),
-        shardingColumns.c_str());
+        sb.c_str());
     return result;
 }
 
 void TBaseDBLogWriter::WaitForSchemeOperation(TActorId sender, ui64 txId) {
-    auto& server = Runner.GetTestServer();
+    auto& server = Runner->GetTestServer();
     auto& runtime = *server.GetRuntime();
     auto& settings = server.GetSettings();
     auto request = MakeHolder<NSchemeShard::TEvSchemeShard::TEvNotifyTxCompletion>();
@@ -114,7 +135,7 @@ void TBaseDBLogWriter::WaitForSchemeOperation(TActorId sender, ui64 txId) {
 }
 
 void TBaseDBLogWriter::ExecuteModifyScheme(NKikimrSchemeOp::TModifyScheme& modifyScheme) {
-    auto& server = Runner.GetTestServer();
+    auto& server = Runner->GetTestServer();
     auto request = std::make_unique<TEvTxUserProxy::TEvProposeTransaction>();
     request->Record.SetExecTimeoutPeriod(Max<ui64>());
     *request->Record.MutableTransaction()->MutableModifyScheme() = modifyScheme;
@@ -158,7 +179,7 @@ void TBaseDBLogWriter::CreateTable() {
 
 void TBaseDBLogWriter::SendDataViaActorSystem(std::shared_ptr<arrow::RecordBatch> batch) {
 
-    auto* runtime = Runner.GetTestServer().GetRuntime();
+    auto* runtime = Runner->GetTestServer().GetRuntime();
 
     UNIT_ASSERT(batch);
     UNIT_ASSERT(batch->num_rows());

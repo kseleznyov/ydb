@@ -1855,6 +1855,12 @@ namespace Tests {
         if (Settings->LoggerInitializer) {
             Settings->LoggerInitializer(*Runtime);
         }
+
+        if (Settings->LogSinkProvider) {
+            for (ui32 i = 0; i < Runtime->GetNodeCount(); ++i) {
+                Runtime->GetLogSettings(i)->LogSinkProvider = Settings->LogSinkProvider;
+            }
+        }
     }
 
     void TServer::AddSysViewsRosterUpdateObserver() {

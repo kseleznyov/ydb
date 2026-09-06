@@ -2,11 +2,14 @@
 
 #include "arrow_type_mapping.h"
 
+#include <ydb/library/actors/struct_log/log_sink.h>
+
 #include <contrib/libs/apache/arrow/cpp/src/arrow/type.h>
 #include <contrib/libs/apache/arrow/cpp/src/arrow/util/key_value_metadata.h>
 
 #include <util/datetime/base.h>
 #include <util/generic/string.h>
+#include <util/string/cast.h>
 #include <util/system/types.h>
 
 #include <string>
@@ -16,17 +19,33 @@ namespace NKikimr::NKqp::NLogToDB {
 
 class TBaseDBLogColumn {
 public:
-    struct TSettings {
+    struct TDatabaseSettings {
         TString Extra;
         bool IsPK {false};
-        bool NotNull {false};
+        bool IsNotNull {false};
         bool IsShardingKey {false};
+
+        static TDatabaseSettings PK(const TString& extra = {}) {
+            return TDatabaseSettings {.Extra = extra, .IsPK = true, .IsNotNull = true};
+        }
+
+        static TDatabaseSettings ShardingKey(const TString& extra = {}) {
+            return TDatabaseSettings {.Extra = extra, .IsNotNull = true, .IsShardingKey = true};
+        }
+
+        static TDatabaseSettings PKShardingKey(const TString& extra = {}) {
+            return TDatabaseSettings {.Extra = extra, .IsPK = true, .IsNotNull = true, .IsShardingKey = true};
+        }
+
+        static TDatabaseSettings NotNull(const TString& extra = {}) {
+            return TDatabaseSettings {.Extra = extra, .IsNotNull = true};
+        }
     };
 
     TBaseDBLogColumn() = default;
     TBaseDBLogColumn(TString name, TString type)
-        : TBaseDBLogColumn(std::move(name), std::move(type), TSettings()) {}
-    TBaseDBLogColumn(TString name, TString type, TSettings settings)
+        : TBaseDBLogColumn(std::move(name), std::move(type), TDatabaseSettings()) {}
+    TBaseDBLogColumn(TString name, TString type, TDatabaseSettings settings)
         : Name(std::move(name))
         , Type(std::move(type))
         , Settings(std::move(settings)) {}
@@ -34,7 +53,7 @@ public:
 
     const TString Name;
     const TString Type;
-    const TSettings Settings;
+    const TDatabaseSettings Settings;
 
     virtual std::shared_ptr<arrow::DataType> GetArrowDataType() const = 0;
 
@@ -42,13 +61,12 @@ public:
         auto arrowSchemaField = std::make_shared<arrow::KeyValueMetadata>(
             std::vector<std::string>{"ydb.type"},
             std::vector<std::string>{std::string(Type)});
-        return arrow::field(std::string(Name), GetArrowDataType(), !Settings.NotNull, arrowSchemaField);
+        return arrow::field(std::string(Name), GetArrowDataType(), !Settings.IsNotNull, arrowSchemaField);
     }
 
     virtual void Reset() = 0;
+    virtual bool Write(const NActors::NStructuredLog::TLogMessage&) = 0;
     virtual std::shared_ptr<arrow::Array> MakeArray() = 0;
-
-    virtual bool AddDummyValue() = 0;
 };
 
 template <typename T>
@@ -61,7 +79,7 @@ public:
 
     std::shared_ptr<TArrowBuilderType> Builder;
 
-    TTypedDBLogColumn(TString name, TSettings settings)
+    TTypedDBLogColumn(TString name, TDatabaseSettings settings)
         : TBaseDBLogColumn(std::move(name), TypeName, std::move(settings)),
         Builder(TArrowTypeMapper<TValueType>::CreateBuilder()) {}
 
@@ -77,6 +95,12 @@ public:
         return TArrowTypeMapper<TValueType>::AppendValue(*Builder, value);
     }
 
+    bool Write(const NActors::NStructuredLog::TLogMessage&) override {
+        // @todo Удалить реализацию -заглушку
+        TValueType value{};
+        return AppendValue(value);
+    }
+
     std::shared_ptr<arrow::Array> MakeArray() override {
         std::shared_ptr<arrow::Array> result;
         auto status = Builder->Finish(&result);
@@ -85,25 +109,77 @@ public:
         }
         return result;
     }
+};
 
-    bool AddDummyValue() override {
-        TValueType value{};
-        return AppendValue(value);
+/// @todo алисы не нужны
+using TDBLogColumnBool = TTypedDBLogColumn<bool>;
+using TDBLogColumnInt8 = TTypedDBLogColumn<i8>;
+using TDBLogColumnUint8 = TTypedDBLogColumn<ui8>;
+using TDBLogColumnInt16 = TTypedDBLogColumn<i16>;
+using TDBLogColumnUint16 = TTypedDBLogColumn<ui16>;
+using TDBLogColumnInt32 = TTypedDBLogColumn<i32>;
+using TDBLogColumnUint32 = TTypedDBLogColumn<ui32>;
+using TDBLogColumnInt64 = TTypedDBLogColumn<i64>;
+using TDBLogColumnUint64 = TTypedDBLogColumn<ui64>;
+using TDBLogColumnFloat = TTypedDBLogColumn<float>;
+using TDBLogColumnDouble = TTypedDBLogColumn<double>;
+using TDBLogColumnString = TTypedDBLogColumn<TString>;
+using TDBLogColumnInstant = TTypedDBLogColumn<TInstant>;
+
+// Write message time to column
+class TDBLogMessageTimeColumn : public TTypedDBLogColumn<TInstant> {
+public:
+    using TBase = TTypedDBLogColumn<TInstant>;
+
+    TDBLogMessageTimeColumn() : TBase("timestamp", TDatabaseSettings::PKShardingKey())  {
+    }
+
+    bool Write(const NActors::NStructuredLog::TLogMessage& message) override {
+        return AppendValue(message.Time);
     }
 };
 
-using TBoolDBLogColumn = TTypedDBLogColumn<bool>;
-using TInt8DBLogColumn = TTypedDBLogColumn<i8>;
-using TUint8DBLogColumn = TTypedDBLogColumn<ui8>;
-using TInt16DBLogColumn = TTypedDBLogColumn<i16>;
-using TUint16DBLogColumn = TTypedDBLogColumn<ui16>;
-using TInt32DBLogColumn = TTypedDBLogColumn<i32>;
-using TUint32DBLogColumn = TTypedDBLogColumn<ui32>;
-using TInt64DBLogColumn = TTypedDBLogColumn<i64>;
-using TUint64DBLogColumn = TTypedDBLogColumn<ui64>;
-using TFloatDBLogColumn = TTypedDBLogColumn<float>;
-using TDoubleDBLogColumn = TTypedDBLogColumn<double>;
-using TStringDBLogColumn = TTypedDBLogColumn<TString>;
-using TInstantDBLogColumn = TTypedDBLogColumn<TInstant>;
+// Write message priority to column
+class TDBLogMessagePrioColumn : public TTypedDBLogColumn<ui16> {
+public:
+    using TBase = TTypedDBLogColumn<ui16>;
+
+    TDBLogMessagePrioColumn() : TBase("priority", TDatabaseSettings()) {
+    }
+
+    bool Write(const NActors::NStructuredLog::TLogMessage& message) override {
+        return AppendValue(static_cast<ui16>(message.Priority));
+    }
+};
+
+// Write message text to column
+class TDBLogMessageTextColumn : public TTypedDBLogColumn<TString> {
+public:
+    using TBase = TTypedDBLogColumn<TString>;
+
+    TDBLogMessageTextColumn() : TBase("message", TDatabaseSettings()) {
+    }
+
+    bool Write(const NActors::NStructuredLog::TLogMessage& message) override {
+        return AppendValue(message.TextMessage);
+    }
+};
+
+// Write message location to column
+class TDBLogMessageLocationColumn : public TTypedDBLogColumn<TString> {
+public:
+    using TBase = TTypedDBLogColumn<TString>;
+
+    TDBLogMessageLocationColumn() : TBase("location", TDatabaseSettings()) {
+    }
+
+    bool Write(const NActors::NStructuredLog::TLogMessage& message) override {
+        TString location;
+        if (message.FileName) {
+            location = TString(message.FileName) + ':' + ToString(message.LineNumber);
+        }
+        return AppendValue(location);
+    }
+};
 
 }

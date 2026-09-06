@@ -3,6 +3,7 @@
 #include <ydb/core/testlib/test_client.h>
 #include <ydb/core/kqp/federated_query/kqp_federated_query_helpers.h>
 #include <ydb/core/tx/scheme_cache/scheme_cache.h>
+#include <ydb/library/actors/core/log_settings.h>
 #include <ydb/library/testlib/common/test_utils.h>
 #include <ydb/library/yql/providers/s3/actors_factory/yql_s3_actors_factory.h>
 #include <yql/essentials/core/issue/yql_issue.h>
@@ -97,6 +98,7 @@ public:
     bool UseLocalCheckpointsInStreamingQueries = false;
     TDuration CheckpointPeriod = TDuration::MilliSeconds(200);
     std::optional<TTestLogSettings> LogSettings;
+    NActors::NLog::TSettings::TLogSinkVectorProvider LogSinkProvider;
     bool Verbose = false;
 
     TKikimrSettings() {
@@ -144,6 +146,10 @@ public:
     TKikimrSettings& SetUseLocalCheckpointsInStreamingQueries(bool value) { UseLocalCheckpointsInStreamingQueries = value; return *this; };
     TKikimrSettings& SetCheckpointPeriod(TDuration value) { CheckpointPeriod = value; return *this; };
     TKikimrSettings& SetLogSettings(TTestLogSettings value) { LogSettings = value; return *this; };
+    TKikimrSettings& SetLogSinkProvider(NActors::NLog::TSettings::TLogSinkVectorProvider value) {
+        LogSinkProvider = std::move(value);
+        return *this;
+    }
     TKikimrSettings& SetEnableStrictSerializableIsolation(bool value) {
         AppConfig.MutableTableServiceConfig()->SetEnableStrictSerializableIsolation(value);
         return *this;
