@@ -538,6 +538,35 @@ namespace NActors {
     constexpr size_t TimeBufSize = 512;
 
     bool TLoggerActor::OutputRecord(NLog::TEvLog *evLog) noexcept {
+        auto subMessage = YDB_LOG_CREATE_MESSAGE(
+            {"valueInt", 1},
+            {"valueFloatPI", 3.1415},
+            {"valueBool", true},
+            {"valueString", "string value content"});
+
+        auto subMessage2 = YDB_LOG_CREATE_MESSAGE(
+            {"valueInt", 2},
+            {"valueFloatExp", 2.71},
+            {"valueBool", false},
+            {"valueString", "string value content"});
+
+        auto subSubMessage = YDB_LOG_CREATE_MESSAGE(
+            {"valueInt", 3},
+            {"valueFloat", 123.456},
+            {"valueBool", true},
+            {"valueString", "string value content in sub-sub message"});
+
+        auto message = YDB_LOG_CREATE_MESSAGE(
+            subMessage,
+            {"subMessage",
+                YDB_LOG_CREATE_MESSAGE(
+                    subMessage,
+                    {"subSubMessage", subSubMessage})},
+            {"subMessage2", subMessage2});
+
+        if (evLog->StructuredMessage.Defined()) {
+            YDB_LOG_UPDATE_MESSAGE(message, evLog->StructuredMessage.GetRef());
+        }
         return OutputRecord(
             evLog->Stamp,
             evLog->Level.ToPrio(),
@@ -546,7 +575,7 @@ namespace NActors {
             evLog->LineNumber,
             evLog->Line,
             evLog->Json,
-            evLog->StructuredMessage);
+            message);
     }
 
     bool TLoggerActor::OutputRecord(
