@@ -558,6 +558,46 @@ namespace NActors {
 
         auto message = YDB_LOG_CREATE_MESSAGE(
             subMessage,
+
+            {"types",
+                YDB_LOG_CREATE_MESSAGE(
+                    {"UInt64", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueUInt64", std::numeric_limits<ui64>::max()},
+                        {"minValueUInt64", std::numeric_limits<ui64>::min()})},
+
+                    {"Int64", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueInt64", std::numeric_limits<i64>::max()},
+                        {"minValueInt64", std::numeric_limits<i64>::min()})},
+
+                    {"UInt32", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueUInt32", std::numeric_limits<ui32>::max()},
+                        {"minValueUInt32", std::numeric_limits<ui32>::min()})},
+
+                    {"Int32", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueInt32", std::numeric_limits<i32>::max()},
+                        {"minValueInt32", std::numeric_limits<i32>::min()})},
+
+                    {"UInt16", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueUInt16", std::numeric_limits<ui16>::max()},
+                        {"minValueUInt16", std::numeric_limits<ui16>::min()})},
+
+                    {"Int16", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueInt16", std::numeric_limits<i16>::max()},
+                        {"minValueInt16", std::numeric_limits<i16>::min()})},
+
+                    {"UInt8", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueUInt8", std::numeric_limits<ui8>::max()},
+                        {"minValueUInt8", std::numeric_limits<ui8>::min()})},
+
+                    {"Double", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueDouble", std::numeric_limits<double>::max()},
+                        {"minValueDouble", std::numeric_limits<double>::min()})},
+
+                    {"Float", YDB_LOG_CREATE_MESSAGE(
+                        {"maxValueFloat", std::numeric_limits<float>::max()},
+                        {"minValueFloat", std::numeric_limits<float>::min()})})
+            },
+
             {"subMessage",
                 YDB_LOG_CREATE_MESSAGE(
                     subMessage,
