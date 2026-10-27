@@ -183,9 +183,36 @@ public:
         OutputParam(s, rest...);
     }
 
+    static std::atomic<bool> StatSpinLock;
+    struct TStatData {
+        ui64 Count{0};
+        ui64 TotalSize{0};
+    };
+    using TStatDataMap = std::map<std::string, TStatData>;
+    static TStatDataMap Stat;
+
+    inline static void LockStat() {
+        bool value = false;
+        while (!StatSpinLock.compare_exchange_weak(value, true)) {
+            value = false;
+        }
+    }
+
+    inline static void UnLockStat() {
+        StatSpinLock.store(false);
+    }
+
+    inline static TStatDataMap GetStat() {
+        LockStat();
+        auto result = Stat;
+        UnLockStat();
+        return result;
+    }
+
     // Native types support
     template <typename T, typename K = TKeyName>
     TCreateMessageArg(K&& name, const T& value) {
+        auto startSize = TCreateMessageGuard::GetBuildMessage().GetDataSize();
         if constexpr (std::is_function<T>::value) {
             static_assert(false, "It is not allowed to pass function into structured message");
         } else if constexpr (std::is_same<T, TStructuredMessage>::value) {
@@ -204,6 +231,13 @@ public:
             OutputParam(stream, value);
             TCreateMessageGuard::GetBuildMessage().AppendValue({std::move(name)}, stream.Str());
         }
+        auto finishSize = TCreateMessageGuard::GetBuildMessage().GetDataSize();
+
+        LockStat();
+        auto& stat = Stat[typeid(T).name()];
+        stat.Count++;
+        stat.TotalSize += (finishSize - startSize);
+        UnLockStat();
     }
 
     TCreateMessageArg(const TStructuredMessage& message);

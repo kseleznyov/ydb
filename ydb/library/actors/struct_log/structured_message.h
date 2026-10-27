@@ -171,6 +171,10 @@ public:
 
     void Clear();
 
+    ui64 GetDataSize() const {
+        return Data.size();
+    }
+
 protected:
     struct TAttachedValue {
         std::vector<TKeyName> Name;

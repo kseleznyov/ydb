@@ -592,6 +592,40 @@ namespace NActors {
 
                 LogBackend->WriteData(
                     TLogRecord(logPrio, logRecord.data(), logRecord.size(), metaFlags));
+
+                static ui64 totalCount = 0;
+                static ui64 totalWritten = 0;
+                static ui64 totalData = 0;
+
+                if (structuredMessage.Defined()) {
+                    totalCount++;
+                    totalWritten+=logRecord.size();
+                    totalData+=structuredMessage.GetRef().GetDataSize();
+
+                    if ( (totalCount%10) ==0 ) {
+                        logRecord.clear();
+                        logRecord << "Total=" << totalCount;
+                        logRecord << " Written=" << totalWritten;
+                        logRecord << " Data=" << totalData;
+
+                        LogBackend->WriteData(
+                            TLogRecord(logPrio, logRecord.data(), logRecord.size(), metaFlags));
+
+                        static unsigned num{0};
+                        auto stat = NStructuredLog::TCreateMessageArg::GetStat();
+                        for(auto& statItem: stat) {
+                            logRecord.clear();
+                            logRecord << "Stat";
+                            logRecord << " " << num;
+                            logRecord << " " << statItem.first;
+                            logRecord << " " << statItem.second.Count;
+                            logRecord << " " << statItem.second.TotalSize;
+                            LogBackend->WriteData(
+                                TLogRecord(logPrio, logRecord.data(), logRecord.size(), metaFlags));
+                        }
+                        num++;
+                    }
+                }
             } break;
 
             case NActors::NLog::TSettings::PLAIN_SHORT_FORMAT: {

@@ -71,4 +71,7 @@ TCreateMessageArg::TCreateMessageArg(const TMaybe<TStructuredMessage>& message) 
     }
 }
 
+std::atomic<bool> TCreateMessageArg::StatSpinLock{false};
+TCreateMessageArg::TStatDataMap TCreateMessageArg::Stat;
+
 }  // namespace NActors::NStructuredLog
